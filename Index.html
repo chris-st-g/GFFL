@@ -2,35 +2,129 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Graham Family Football League</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 20px;
-      background: #f4f4f4;
-    }
-    h1 { color: #1a1a1a; }
-    #status { color: #888; font-style: italic; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>GFFL</title>
+  <?!= include('Styles') ?>
 </head>
 <body>
-  <h1>Graham Family Football League</h1>
-  <p id="status">Loading...</p>
 
-  <script>
-    // Calls the server-side getLeagueData() function in Code.gs
-    google.script.run
-      .withSuccessHandler(function(data) {
-        document.getElementById('status').textContent = 'Loaded. Games found: ' + data.scores.length;
-        console.log('League data:', data);
-      })
-      .withFailureHandler(function(err) {
-        document.getElementById('status').textContent = 'Error: ' + err.message;
-      })
-      .getLeagueData();
-  </script>
+  <header>
+    <h1>GFFL</h1>
+    <p>Graham Family Football League</p>
+    <div class="week-badge" id="week-badge">LOADING...</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" id="tab-btn-picks"     onclick="showTab('picks')">Picks</button>
+    <button class="tab"        id="tab-btn-standings" onclick="showTab('standings')">Standings</button>
+    <button class="tab"        id="tab-btn-games"     onclick="showTab('games')">Games</button>
+    <button class="tab"        id="tab-btn-admin"     onclick="showTab('admin'); showAdminPanel();">Admin</button>
+  </nav>
+
+  <main>
+    <!-- Global loading -->
+    <div id="loading" class="loading">Loading league data...</div>
+
+    <!-- ── Picks Tab ── -->
+    <div id="tab-content-picks" class="tab-content hidden">
+      <div class="player-selector">
+        <label for="player-select">Your Name</label>
+        <select id="player-select" onchange="onPlayerChanged()">
+          <option value="">-- Select your name --</option>
+        </select>
+      </div>
+      <div id="picks-content"></div>
+    </div>
+
+    <!-- ── Standings Tab ── -->
+    <div id="tab-content-standings" class="tab-content hidden">
+      <div id="standings-content">
+        <p class="loading">Select Standings tab to load.</p>
+      </div>
+    </div>
+
+    <!-- ── Games Tab ── -->
+    <div id="tab-content-games" class="tab-content hidden">
+      <div id="games-content">
+        <p class="loading">Select Games tab to load.</p>
+      </div>
+    </div>
+
+    <!-- ── Admin Tab ── -->
+    <div id="tab-content-admin" class="tab-content hidden">
+
+      <!-- Login -->
+      <div id="admin-login">
+        <div class="admin-form">
+          <h3>Commissioner Login</h3>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="admin-pw" placeholder="Enter admin password"
+              onkeydown="if(event.key==='Enter') adminLogin()">
+          </div>
+          <button class="btn-primary" onclick="adminLogin()">Login</button>
+          <p class="form-msg" id="admin-login-msg"></p>
+        </div>
+      </div>
+
+      <!-- Panel (shown after login) -->
+      <div id="admin-panel" class="hidden">
+
+        <div class="admin-form">
+          <h3>Set Current Week</h3>
+          <div class="form-group">
+            <label>Week Number (1–18)</label>
+            <input type="number" id="new-week" min="1" max="18" placeholder="e.g. 5">
+          </div>
+          <button class="btn-primary" onclick="adminSetWeek()">Update Week</button>
+          <p class="form-msg" id="week-msg"></p>
+        </div>
+
+        <div class="admin-form">
+          <h3>Add Bonus Points</h3>
+          <div class="form-group">
+            <label>Grahamchise</label>
+            <select id="bonus-player"></select>
+          </div>
+          <div class="form-group">
+            <label>Points</label>
+            <input type="number" id="bonus-points" step="0.5" placeholder="e.g. 2">
+          </div>
+          <div class="form-group">
+            <label>Reason</label>
+            <input type="text" id="bonus-reason" placeholder="e.g. Commissioner's choice">
+          </div>
+          <button class="btn-primary" onclick="adminAddBonus()">Add Bonus</button>
+          <p class="form-msg" id="bonus-msg"></p>
+        </div>
+
+        <div class="admin-form">
+          <h3>Score Completed Week</h3>
+          <p style="font-size:0.85rem;color:#666;margin-bottom:12px;">
+            Runs after all games in the current week are final.
+            Updates all picks with points earned.
+          </p>
+          <button class="btn-primary" onclick="adminScoreWeek()">Score Current Week</button>
+          <p class="form-msg" id="score-msg"></p>
+        </div>
+
+        <div class="admin-form">
+          <h3>Add Grahamchise</h3>
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="new-player-name" placeholder="First name">
+          </div>
+          <button class="btn-primary" onclick="adminAddPlayer()">Add Player</button>
+          <p class="form-msg" id="player-msg"></p>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <?!= include('Scripts') ?>
 </body>
 </html>

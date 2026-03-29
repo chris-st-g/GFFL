@@ -1,0 +1,432 @@
+<script>
+var STATE = {
+  players:     [],
+  currentWeek: 1,
+  season:      2025,
+  playerName:  localStorage.getItem('gffl_player') || '',
+  selectedTeam: null,
+  selectedPts:  null,
+  currentTab:  'picks'
+};
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+window.addEventListener('load', function() {
+  google.script.run
+    .withSuccessHandler(onLeagueDataLoaded)
+    .withFailureHandler(showGlobalError)
+    .getLeagueData();
+});
+
+function onLeagueDataLoaded(data) {
+  STATE.players     = data.players;
+  STATE.currentWeek = data.currentWeek;
+  STATE.season      = data.season;
+
+  // Update week badge
+  document.getElementById('week-badge').textContent = 'WEEK ' + data.currentWeek;
+
+  // Build player dropdown
+  buildPlayerDropdown();
+
+  // Show picks tab
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('tab-content-picks').classList.remove('hidden');
+
+  // Load pick data
+  loadPickTab();
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+
+function showTab(name) {
+  STATE.currentTab = name;
+
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.getElementById('tab-btn-' + name).classList.add('active');
+
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.add('hidden'); });
+  document.getElementById('tab-content-' + name).classList.remove('hidden');
+
+  if (name === 'standings') loadStandings();
+  if (name === 'games')     loadGamesTab();
+  if (name === 'picks')     loadPickTab();
+}
+
+// ── Player Selector ───────────────────────────────────────────────────────────
+
+function buildPlayerDropdown() {
+  var sel = document.getElementById('player-select');
+  sel.innerHTML = '<option value="">-- Select your name --</option>';
+  STATE.players.forEach(function(name) {
+    var opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === STATE.playerName) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function onPlayerChanged() {
+  var sel = document.getElementById('player-select');
+  STATE.playerName = sel.value;
+  localStorage.setItem('gffl_player', STATE.playerName);
+  STATE.selectedTeam = null;
+  STATE.selectedPts  = null;
+  loadPickTab();
+}
+
+// ── Picks Tab ─────────────────────────────────────────────────────────────────
+
+function loadPickTab() {
+  var container = document.getElementById('picks-content');
+  container.innerHTML = '<p class="loading">Loading this week\'s games...</p>';
+
+  google.script.run
+    .withSuccessHandler(renderPickTab)
+    .withFailureHandler(function(e) {
+      container.innerHTML = '<p class="error-msg">Could not load games: ' + e.message + '</p>';
+    })
+    .getPickPageData(STATE.playerName || null);
+}
+
+function renderPickTab(data) {
+  var container = document.getElementById('picks-content');
+  container.innerHTML = '';
+
+  // Already picked banner
+  if (data.existingPick) {
+    container.innerHTML += '<div class="picked-banner">' +
+      '<h3>Your Week ' + data.week + ' Pick: ' + data.existingPick + '</h3>' +
+      '<p>Your pick is locked in. Check back after the game!</p>' +
+      '</div>';
+  }
+
+  // No player selected
+  if (!STATE.playerName) {
+    container.innerHTML += '<p style="color:#888;text-align:center;padding:16px 0;">Select your name above to submit a pick.</p>';
+  }
+
+  // Game cards
+  if (!data.games || !data.games.length) {
+    container.innerHTML += '<p class="error-msg" style="text-align:center">No games found for Week ' + data.week + '.</p>';
+    return;
+  }
+
+  var canPick = !!STATE.playerName && !data.existingPick;
+
+  var label = data.isGraceBowl ? 'GRACE BOWL — WEEK ' + data.week : 'WEEK ' + data.week + ' MATCHUPS';
+  container.innerHTML += '<p class="section-title">' + label + '</p>';
+
+  data.games.forEach(function(game) {
+    container.innerHTML += buildGameCard(game, data.existingPick, canPick);
+  });
+
+  if (canPick) {
+    container.innerHTML += '<div class="submit-wrap">' +
+      '<button class="submit-btn" id="submit-btn" onclick="submitPickNow()" disabled>' +
+      'SELECT A TEAM TO PICK' +
+      '</button></div>';
+  }
+}
+
+function buildGameCard(game, existingPick, canPick) {
+  var headerContent = '';
+  if (game.gameType === 'Deuce') {
+    headerContent += '<span class="badge badge-deuce">DEUCE</span><span>2 pts each</span>';
+  } else if (game.gameType === 'Trey') {
+    headerContent += '<span class="badge badge-trey">TREY</span><span>underdog = 3 pts</span>';
+  } else {
+    headerContent += '<span style="color:#aaa">Regular</span><span>1 pt each</span>';
+  }
+  if (game.isGraceBowl) headerContent += '<span class="badge badge-grace">GRACE BOWL</span>';
+
+  var statusClass = game.status === 'in' ? 'live' : (game.status === 'post' ? 'final' : '');
+  var statusText  = game.statusDetail || '';
+
+  var homePicked = existingPick === game.homeAbbr;
+  var awayPicked = existingPick === game.awayAbbr;
+
+  return '<div class="game-card">' +
+    '<div class="game-card-header">' + headerContent + '</div>' +
+    '<div class="game-teams">' +
+      buildTeamBtn(game.awayAbbr, game.awayTeam, game.awayWins, game.awayLosses, game.awayPoints, awayPicked, canPick, game.completed) +
+      '<div class="vs-divider">@</div>' +
+      buildTeamBtn(game.homeAbbr, game.homeTeam, game.homeWins, game.homeLosses, game.homePoints, homePicked, canPick, game.completed) +
+    '</div>' +
+    '<div class="game-status-bar ' + statusClass + '">' + statusText + '</div>' +
+  '</div>';
+}
+
+function buildTeamBtn(abbr, name, wins, losses, pts, isPicked, canPick, completed) {
+  var ptsClass = pts === 3 ? 'pts-3' : (pts === 2 ? 'pts-2' : '');
+  var selectedClass = isPicked ? ' selected' : '';
+  var disabledAttr  = (!canPick || completed) ? ' disabled' : '';
+  var onclick = canPick && !completed ? ' onclick="selectTeam(\'' + abbr + '\',' + pts + ')"' : '';
+
+  return '<button class="team-btn' + selectedClass + '"' + disabledAttr + onclick + '>' +
+    '<div class="team-abbr">' + abbr + '</div>' +
+    '<div class="team-name">' + name + '</div>' +
+    '<div class="team-record">' + wins + '-' + losses + '</div>' +
+    '<div class="team-pts ' + ptsClass + '">' + pts + ' pt' + (pts !== 1 ? 's' : '') + '</div>' +
+  '</button>';
+}
+
+function selectTeam(abbr, pts) {
+  STATE.selectedTeam = abbr;
+  STATE.selectedPts  = pts;
+
+  // Update button visual states
+  document.querySelectorAll('.team-btn').forEach(function(btn) {
+    btn.classList.remove('selected');
+    if (btn.getAttribute('onclick') && btn.getAttribute('onclick').indexOf("'" + abbr + "'") !== -1) {
+      btn.classList.add('selected');
+    }
+  });
+
+  // Enable submit button
+  var submitBtn = document.getElementById('submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'PICK ' + abbr + ' FOR ' + pts + ' PT' + (pts !== 1 ? 'S' : '');
+  }
+}
+
+function submitPickNow() {
+  if (!STATE.selectedTeam || !STATE.playerName) return;
+
+  var btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'SUBMITTING...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast(result.message);
+        loadPickTab(); // refresh to show confirmation
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'TRY AGAIN';
+        alert(result.message);
+      }
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'ERROR — TRY AGAIN';
+      alert('Error: ' + e.message);
+    })
+    .submitPick(STATE.playerName, STATE.selectedTeam, STATE.currentWeek, STATE.season);
+}
+
+// ── Standings Tab ─────────────────────────────────────────────────────────────
+
+function loadStandings() {
+  var container = document.getElementById('standings-content');
+  container.innerHTML = '<p class="loading">Loading standings...</p>';
+
+  google.script.run
+    .withSuccessHandler(renderStandings)
+    .withFailureHandler(function(e) {
+      container.innerHTML = '<p class="error-msg">Could not load standings: ' + e.message + '</p>';
+    })
+    .getStandings(STATE.season);
+}
+
+function renderStandings(data) {
+  var container = document.getElementById('standings-content');
+
+  if (!data.standings || !data.standings.length) {
+    container.innerHTML = '<p class="loading">No standings yet — picks start Week 1.</p>';
+    return;
+  }
+
+  var html = '<p class="section-title">' + data.season + ' Season — Through Week ' + data.currentWeek + '</p>';
+  html += '<table class="standings-table">';
+  html += '<thead><tr><th>#</th><th>Grahamchise</th><th>Total</th><th>Picks</th><th>Bonus</th><th>Missed</th></tr></thead>';
+  html += '<tbody>';
+
+  data.standings.forEach(function(player, index) {
+    var rank = index + 1;
+    var rankClass = rank === 1 ? 'rank-cell rank-1' : 'rank-cell';
+    var rankDisplay = rank === 1 ? '🏆' : rank;
+    html += '<tr>' +
+      '<td class="' + rankClass + '">' + rankDisplay + '</td>' +
+      '<td><strong>' + player.playerName + '</strong></td>' +
+      '<td class="points-cell">' + player.totalPoints + '</td>' +
+      '<td>' + player.pickPoints + '</td>' +
+      '<td>' + (player.bonusPoints > 0 ? '+' + player.bonusPoints : '—') + '</td>' +
+      '<td>' + (player.weeksMissed > 0 ? player.weeksMissed : '—') + '</td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ── Games Tab ────────────────────────────────────────────────────────────────
+
+function loadGamesTab() {
+  var container = document.getElementById('games-content');
+  container.innerHTML = '<p class="loading">Loading games...</p>';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      renderPickTab(data); // reuse pick renderer in read-only mode
+      // Copy rendered content to games tab
+      var picksContent = document.getElementById('picks-content').innerHTML;
+      container.innerHTML = picksContent;
+      // Remove submit button if present
+      var wrap = container.querySelector('.submit-wrap');
+      if (wrap) wrap.remove();
+      // Disable all team buttons
+      container.querySelectorAll('.team-btn').forEach(function(btn) {
+        btn.disabled = true;
+      });
+    })
+    .withFailureHandler(function(e) {
+      container.innerHTML = '<p class="error-msg">Could not load games: ' + e.message + '</p>';
+    })
+    .getPickPageData(null);
+}
+
+// ── Admin Tab ─────────────────────────────────────────────────────────────────
+
+var ADMIN_TOKEN = sessionStorage.getItem('gffl_admin_token') || null;
+
+function showAdminPanel() {
+  var loginSection  = document.getElementById('admin-login');
+  var panelSection  = document.getElementById('admin-panel');
+  if (ADMIN_TOKEN) {
+    loginSection.classList.add('hidden');
+    panelSection.classList.remove('hidden');
+    buildAdminPlayerSelects();
+  } else {
+    loginSection.classList.remove('hidden');
+    panelSection.classList.add('hidden');
+  }
+}
+
+function adminLogin() {
+  var pw = document.getElementById('admin-pw').value;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        ADMIN_TOKEN = result.token;
+        sessionStorage.setItem('gffl_admin_token', ADMIN_TOKEN);
+        document.getElementById('admin-login-msg').textContent = '';
+        showAdminPanel();
+      } else {
+        document.getElementById('admin-login-msg').textContent = 'Incorrect password.';
+        document.getElementById('admin-login-msg').className = 'form-msg err';
+      }
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('admin-login-msg').textContent = 'Error: ' + e.message;
+    })
+    .adminLogin(pw);
+}
+
+function buildAdminPlayerSelects() {
+  ['bonus-player', 'add-player-select'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- Select player --</option>';
+    STATE.players.forEach(function(name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+function adminSetWeek() {
+  var week = parseInt(document.getElementById('new-week').value, 10);
+  if (!week || week < 1 || week > 18) {
+    setAdminMsg('week-msg', 'Enter a week between 1 and 18.', true);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        STATE.currentWeek = week;
+        document.getElementById('week-badge').textContent = 'WEEK ' + week;
+        setAdminMsg('week-msg', 'Week updated to ' + week + '.');
+      } else {
+        setAdminMsg('week-msg', r.message, true);
+      }
+    })
+    .withFailureHandler(function(e) { setAdminMsg('week-msg', e.message, true); })
+    .setCurrentWeek(ADMIN_TOKEN, week);
+}
+
+function adminAddBonus() {
+  var player = document.getElementById('bonus-player').value;
+  var points = parseFloat(document.getElementById('bonus-points').value);
+  var reason = document.getElementById('bonus-reason').value.trim();
+  if (!player || isNaN(points) || !reason) {
+    setAdminMsg('bonus-msg', 'Fill in all fields.', true);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        setAdminMsg('bonus-msg', 'Bonus added for ' + player + '!');
+        document.getElementById('bonus-points').value = '';
+        document.getElementById('bonus-reason').value = '';
+      } else {
+        setAdminMsg('bonus-msg', r.message, true);
+      }
+    })
+    .withFailureHandler(function(e) { setAdminMsg('bonus-msg', e.message, true); })
+    .addBonusPoints(ADMIN_TOKEN, STATE.season, STATE.currentWeek, player, points, reason);
+}
+
+function adminAddPlayer() {
+  var name = document.getElementById('new-player-name').value.trim();
+  if (!name) { setAdminMsg('player-msg', 'Enter a name.', true); return; }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        STATE.players.push(name);
+        STATE.players.sort();
+        buildPlayerDropdown();
+        buildAdminPlayerSelects();
+        setAdminMsg('player-msg', name + ' added!');
+        document.getElementById('new-player-name').value = '';
+      } else {
+        setAdminMsg('player-msg', r.message, true);
+      }
+    })
+    .withFailureHandler(function(e) { setAdminMsg('player-msg', e.message, true); })
+    .addPlayer(name);
+}
+
+function adminScoreWeek() {
+  var week = STATE.currentWeek;
+  google.script.run
+    .withSuccessHandler(function() { setAdminMsg('score-msg', 'Week ' + week + ' scored!'); })
+    .withFailureHandler(function(e) { setAdminMsg('score-msg', e.message, true); })
+    .triggerWeekScoring(ADMIN_TOKEN, week, STATE.season);
+}
+
+function setAdminMsg(id, msg, isError) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'form-msg' + (isError ? ' err' : '');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 3500);
+}
+
+function showGlobalError(e) {
+  document.getElementById('loading').innerHTML = '<p class="error-msg">Failed to load app: ' + (e.message || e) + '</p>';
+}
+</script>
