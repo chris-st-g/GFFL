@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graham Family Football League</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    h1 { color: #1a1a1a; }
+    #status { color: #888; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>Graham Family Football League</h1>
+  <p id="status">Loading...</p>
+
+  <script>
+    // Calls the server-side getLeagueData() function in Code.gs
+    google.script.run
+      .withSuccessHandler(function(data) {
+        document.getElementById('status').textContent = 'Loaded. Games found: ' + data.scores.length;
+        console.log('League data:', data);
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('status').textContent = 'Error: ' + err.message;
+      })
+      .getLeagueData();
+  </script>
+</body>
+</html>
