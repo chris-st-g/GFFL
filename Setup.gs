@@ -94,3 +94,34 @@ function logSheetUrl() {
     Logger.log('Sheet URL: https://docs.google.com/spreadsheets/d/' + id);
   }
 }
+
+/**
+ * Adds Player1 through Player25 to the Players sheet for testing.
+ * Safe to run multiple times — skips names that already exist.
+ * Run this from the Apps Script editor.
+ */
+function seedTestPlayers() {
+  var sheet    = getLeagueSheet().getSheetByName('Players');
+  var existing = getPlayerNames();
+  var added    = 0;
+
+  for (var i = 1; i <= 25; i++) {
+    var name = 'Player' + i;
+    if (existing.indexOf(name) === -1) {
+      var nextId = sheet.getLastRow();
+      sheet.appendRow([nextId, name]);
+      added++;
+    }
+  }
+
+  Logger.log('✅ Added ' + added + ' players. Total players: ' + getPlayerNames().length);
+}
+
+/**
+ * Sets the current week to 6 for testing.
+ * Run this from the Apps Script editor.
+ */
+function setWeekToSix() {
+  setConfig('CurrentWeek', 6);
+  Logger.log('✅ CurrentWeek set to 6');
+}

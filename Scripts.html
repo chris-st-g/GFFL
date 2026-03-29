@@ -12,9 +12,26 @@ var STATE = {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 window.addEventListener('load', function() {
+  // Show an error if backend never responds within 20 seconds
+  var loadTimeout = setTimeout(function() {
+    var el = document.getElementById('loading');
+    if (el && !el.classList.contains('hidden')) {
+      el.innerHTML = '<p class="error-msg">Could not connect to the app backend.<br><br>' +
+        'Please try:<br>1. Refresh the page<br>' +
+        '2. Open in an incognito/private window<br>' +
+        '3. Make sure you updated the deployment to the latest version</p>';
+    }
+  }, 20000);
+
   google.script.run
-    .withSuccessHandler(onLeagueDataLoaded)
-    .withFailureHandler(showGlobalError)
+    .withSuccessHandler(function(data) {
+      clearTimeout(loadTimeout);
+      onLeagueDataLoaded(data);
+    })
+    .withFailureHandler(function(e) {
+      clearTimeout(loadTimeout);
+      showGlobalError(e);
+    })
     .getLeagueData();
 });
 
