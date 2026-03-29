@@ -259,7 +259,7 @@ function renderStandings(data) {
 
   var html = '<p class="section-title">' + data.season + ' Season — Through Week ' + data.currentWeek + '</p>';
   html += '<table class="standings-table">';
-  html += '<thead><tr><th>#</th><th>Grahamchise</th><th>Total</th><th>Picks</th><th>Bonus</th><th>Missed</th></tr></thead>';
+  html += '<thead><tr><th>#</th><th>Grahamchise</th><th>Pts</th><th>W</th><th>L</th><th>T</th><th>Bonus</th></tr></thead>';
   html += '<tbody>';
 
   data.standings.forEach(function(player, index) {
@@ -270,9 +270,10 @@ function renderStandings(data) {
       '<td class="' + rankClass + '">' + rankDisplay + '</td>' +
       '<td><strong>' + player.playerName + '</strong></td>' +
       '<td class="points-cell">' + player.totalPoints + '</td>' +
-      '<td>' + player.pickPoints + '</td>' +
+      '<td style="color:#27ae60;font-weight:700">' + (player.wins || 0) + '</td>' +
+      '<td style="color:#c0392b;font-weight:700">' + (player.losses || 0) + '</td>' +
+      '<td style="color:#888">' + (player.ties > 0 ? player.ties : '—') + '</td>' +
       '<td>' + (player.bonusPoints > 0 ? '+' + player.bonusPoints : '—') + '</td>' +
-      '<td>' + (player.weeksMissed > 0 ? player.weeksMissed : '—') + '</td>' +
     '</tr>';
   });
 

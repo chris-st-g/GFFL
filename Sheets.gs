@@ -123,7 +123,8 @@ function getPicksFromSheet(season, week) {
         playerName:   row[3],
         teamAbbr:     row[4],
         pointsEarned: (earned === '' || earned === null || earned === undefined) ? null : Number(earned),
-        timestamp:    row[6]
+        timestamp:    row[6],
+        result:       row[7] || null   // 'W', 'L', 'T', or null if pending
       };
     });
 }
@@ -159,7 +160,7 @@ function hasPickForWeek(season, week, playerName) {
 function savePick(season, week, playerName, teamAbbr) {
   var sheet  = getLeagueSheet().getSheetByName('Picks');
   var nextId = sheet.getLastRow(); // 1-based; header is row 1, so this = next id
-  sheet.appendRow([nextId, season, week, playerName, teamAbbr, '', new Date().toISOString()]);
+  sheet.appendRow([nextId, season, week, playerName, teamAbbr, '', new Date().toISOString(), '']);
   return { success: true, message: 'Pick saved.' };
 }
 
@@ -176,18 +177,18 @@ function scoreWeekPicks(season, week) {
   var allData  = sheet.getDataRange().getValues();
   var matchups = getWeeklyMatchups(week, season);
 
-  // Build a lookup: teamAbbr → { winner, pointValue }
+  // Build a lookup: teamAbbr → { winner, pointValue, completed, isTie }
   var gameMap = {};
   matchups.forEach(function(game) {
-    gameMap[game.homeAbbr] = { winner: game.winner, pointValue: game.homePoints, completed: game.completed };
-    gameMap[game.awayAbbr] = { winner: game.winner, pointValue: game.awayPoints, completed: game.completed };
+    var isTie = game.completed && game.winner === null;
+    gameMap[game.homeAbbr] = { winner: game.winner, pointValue: game.homePoints, completed: game.completed, isTie: isTie };
+    gameMap[game.awayAbbr] = { winner: game.winner, pointValue: game.awayPoints, completed: game.completed, isTie: isTie };
   });
 
   for (var i = 1; i < allData.length; i++) {
     var row = allData[i];
     var rowSeason = row[1];
     var rowWeek   = row[2];
-    var player    = row[3];
     var team      = row[4];
     var earned    = row[5];
 
@@ -197,8 +198,10 @@ function scoreWeekPicks(season, week) {
     var info = gameMap[team];
     if (!info || !info.completed) continue; // game not final yet
 
-    var points = resolvePickPoints(team, info.winner, info.pointValue);
+    var points = resolvePickPoints(team, info.winner, info.pointValue, info.isTie);
+    var result = resolvePickResult(team, info.winner, info.isTie);
     sheet.getRange(i + 1, 6).setValue(points);
+    sheet.getRange(i + 1, 8).setValue(result);  // column H
   }
 
   Logger.log('Scored picks for week ' + week + ', ' + season);

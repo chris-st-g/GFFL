@@ -46,15 +46,32 @@ function classifyGame(week, homeWins, awayWins) {
 
 /**
  * After a game is final, calculates how many points a pick earns.
+ * Ties give full point value (same as a win — team didn't lose).
  *
  * @param {string} pickedTeamAbbr - Team the player picked, e.g. 'KC'
- * @param {string|null} winnerAbbr - Winning team abbreviation, null if tie or not final
+ * @param {string|null} winnerAbbr - Winning team abbreviation, null if tied, undefined if not final
  * @param {number} pointValue      - Point value for the picked team (from classifyGame)
+ * @param {boolean} isTie          - True if game ended in a tie (completed, no winner)
  * @returns {number} Points earned
  */
-function resolvePickPoints(pickedTeamAbbr, winnerAbbr, pointValue) {
-  if (!winnerAbbr) return 0;
-  return pickedTeamAbbr === winnerAbbr ? pointValue : 0;
+function resolvePickPoints(pickedTeamAbbr, winnerAbbr, pointValue, isTie) {
+  if (isTie) return pointValue;                               // tie → full points
+  if (!winnerAbbr) return 0;                                  // not final yet
+  return pickedTeamAbbr === winnerAbbr ? pointValue : 0;      // win or loss
+}
+
+/**
+ * Returns the result string for a pick: 'W', 'L', or 'T'.
+ *
+ * @param {string} pickedTeamAbbr
+ * @param {string|null} winnerAbbr
+ * @param {boolean} isTie
+ * @returns {string}
+ */
+function resolvePickResult(pickedTeamAbbr, winnerAbbr, isTie) {
+  if (isTie) return 'T';
+  if (!winnerAbbr) return '';   // game not final
+  return pickedTeamAbbr === winnerAbbr ? 'W' : 'L';
 }
 
 /**

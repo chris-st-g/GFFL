@@ -125,3 +125,82 @@ function setWeekToSix() {
   setConfig('CurrentWeek', 6);
   Logger.log('✅ CurrentWeek set to 6');
 }
+
+/**
+ * Adds the Result column header (column H) to the Picks sheet.
+ * Run once after deploying the W-L-T update.
+ * Safe to run again — skips if header already exists.
+ */
+function migrateAddResultColumn() {
+  var sheet = getLeagueSheet().getSheetByName('Picks');
+  var header = sheet.getRange(1, 8).getValue();
+  if (header === 'Result') {
+    Logger.log('Result column already exists — nothing to do.');
+    return;
+  }
+  sheet.getRange(1, 8).setValue('Result');
+  Logger.log('✅ Result column added to Picks sheet.');
+}
+
+/**
+ * Seeds random picks for Player1-25, weeks 1-6, with pre-filled results.
+ * For testing standings display. Does NOT call ESPN.
+ * Safe to run once — clears any existing picks first.
+ * Run from the Apps Script editor.
+ */
+function seedRandomPicks() {
+  var picksSheet = getLeagueSheet().getSheetByName('Picks');
+  var season     = Number(getConfig('Season')) || 2025;
+  var players    = getPlayerNames();
+
+  // Remove any existing seeded picks for this season
+  var data = picksSheet.getDataRange().getValues();
+  var rowsToKeep = [data[0]]; // keep header
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] != season) rowsToKeep.push(data[i]);
+  }
+  picksSheet.clearContents();
+  picksSheet.getRange(1, 1, rowsToKeep.length, rowsToKeep[0].length).setValues(rowsToKeep);
+
+  // NFL teams pool for random assignment
+  var teams = ['KC','BUF','BAL','SF','PHI','DAL','DET','CIN','MIA','LAR',
+               'GB','SEA','MIN','NYJ','PIT','TEN','HOU','ATL','NO','TB',
+               'DEN','LAC','CLE','IND','CHI','NE','NYG','WAS','ARI','CAR','LV','JAX'];
+
+  // Point value options: Regular(1), Deuce(2), Trey-underdog(3)
+  var pointOptions = [1,1,1,1,1,1,1,2,2,3]; // 70% Regular, 20% Deuce, 10% Trey
+
+  var rows    = [];
+  var pickId  = picksSheet.getLastRow(); // start IDs after existing rows
+
+  // Deterministic pseudo-random using a simple hash so results are consistent
+  var seed = 42;
+  function rand() {
+    seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  }
+
+  for (var week = 1; week <= 6; week++) {
+    players.forEach(function(name) {
+      // ~80% chance player submitted a pick
+      if (rand() < 0.20) return; // no pick this week → will count as L in standings
+
+      var team   = teams[Math.floor(rand() * teams.length)];
+      var pts    = pointOptions[Math.floor(rand() * pointOptions.length)];
+      var r      = rand();
+      var result, earned;
+
+      if (r < 0.55)      { result = 'W'; earned = pts; }   // 55% win
+      else if (r < 0.95) { result = 'L'; earned = 0; }     // 40% loss
+      else               { result = 'T'; earned = pts; }   // 5% tie
+
+      rows.push([pickId++, season, week, name, team, earned, new Date().toISOString(), result]);
+    });
+  }
+
+  if (rows.length > 0) {
+    picksSheet.getRange(picksSheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+  }
+
+  Logger.log('✅ Seeded ' + rows.length + ' picks for ' + players.length + ' players across weeks 1-6.');
+}
