@@ -2,6 +2,24 @@
 .clasp.json
 node_modules/
 
+# Secrets and environment
+.env
+.env.local
+.env.*
+!.env.tpl
+credentials*.json
+service_account*.json
+*.pem
+*.key
+
+# Token caches
+token_cache*.json
+
+# Claude / AI tooling
+.claude/
+.codex/
+.agents/
+
 # Logs
 *.log
 
