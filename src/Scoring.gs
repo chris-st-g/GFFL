@@ -3,14 +3,25 @@
  *
  * All GFFL scoring rules live here. Everything else calls these functions.
  *
- * Rules:
- *   Weeks 1-3:  all teams = 1 pt (Regular)
- *   Weeks 4-18: based on win records at game time
- *     Equal wins          → Deuce: both teams = 2 pts
- *     Win diff = 1        → Trey:  underdog = 3 pts, favorite = 1 pt
- *     Win diff > 1        → Regular: both teams = 1 pt
- *   Grace Bowl = Weeks 16-18, same scoring rules, different UI label
+ * CLASSIFICATION — computed from WIN TOTALS ONLY (ties and losses are ignored):
+ *   Equal wins      → Deuce:  both teams = 2 pts
+ *   Wins differ by 1→ Trey:   the LOWER-win team (who would TIE the other by winning)
+ *                             = 3 pts; the higher-win team = 1 pt
+ *   Wins differ 2+  → Regular: both teams = 1 pt
+ *   Fully computable before kickoff — no need to wait for results.
+ *
+ * RESULT SCORING:
+ *   Win  → full point value
+ *   Tie  → HALF the point value   (e.g. a Trey tie on the 3-pt side = 1.5)
+ *   Loss → 0
+ *
+ * EARLY_FLAT_WEEKS — number of opening weeks forced to flat 1-pt Regular games.
+ *   Early in the season every team is near 0-0, so without this every game is a
+ *   Deuce. Weeks 1-3 are flat 1-pt Regular games; Deuce/Trey begins Week 4.
+ *   Set to 0 to apply Deuce/Trey from Week 1 instead.
  */
+
+var EARLY_FLAT_WEEKS = 3;
 
 /**
  * Classifies a game and returns point values for each team.
@@ -22,7 +33,7 @@
  *   gameType: 'Regular' | 'Deuce' | 'Trey'
  */
 function classifyGame(week, homeWins, awayWins) {
-  if (week <= 3) {
+  if (week <= EARLY_FLAT_WEEKS) {
     return { gameType: 'Regular', homePoints: 1, awayPoints: 1 };
   }
 
@@ -33,6 +44,7 @@ function classifyGame(week, homeWins, awayWins) {
   }
 
   if (diff === 1) {
+    // The team with FEWER wins would tie the other by winning → 3-pt pick.
     var underdogIsHome = homeWins < awayWins;
     return {
       gameType: 'Trey',
@@ -46,16 +58,16 @@ function classifyGame(week, homeWins, awayWins) {
 
 /**
  * After a game is final, calculates how many points a pick earns.
- * Ties give full point value (same as a win — team didn't lose).
+ * Win = full value, Tie = HALF value, Loss / not-final = 0.
  *
  * @param {string} pickedTeamAbbr - Team the player picked, e.g. 'KC'
  * @param {string|null} winnerAbbr - Winning team abbreviation, null if tied, undefined if not final
  * @param {number} pointValue      - Point value for the picked team (from classifyGame)
  * @param {boolean} isTie          - True if game ended in a tie (completed, no winner)
- * @returns {number} Points earned
+ * @returns {number} Points earned (may be fractional on a tie)
  */
 function resolvePickPoints(pickedTeamAbbr, winnerAbbr, pointValue, isTie) {
-  if (isTie) return pointValue;                               // tie → full points
+  if (isTie) return pointValue / 2;                           // tie → half points
   if (!winnerAbbr) return 0;                                  // not final yet
   return pickedTeamAbbr === winnerAbbr ? pointValue : 0;      // win or loss
 }

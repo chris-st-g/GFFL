@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <title>GFFL</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 118'%3E%3Cpath d='M12 15 Q31 8 50 4 Q69 8 88 15 L88 46 Q88 88 50 115 Q12 88 12 46 Z' fill='%2314265C'/%3E%3Crect x='19' y='60' width='62' height='26' fill='white'/%3E%3Ctext x='50' y='80' font-family='Arial Black,Arial' font-size='19' font-weight='900' fill='%23C8202F' text-anchor='middle'%3EGFFL%3C/text%3E%3C/svg%3E">
+  <?!= include('Styles') ?>
+</head>
+<body>
+
+  <header>
+    <div class="header-row">
+      <button class="back-btn" id="back-btn" onclick="goBack()">&#8249; Back</button>
+      <div class="header-shield" id="header-shield" onclick="goHome()"></div>
+      <div class="header-titles">
+        <h1 id="league-title">GFFL</h1>
+        <p id="league-sub">Graham Family Football League</p>
+      </div>
+      <div class="week-badge" id="week-badge">…</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="loading" class="loading">Loading league…</div>
+
+    <!-- ── Home ── -->
+    <section id="view-home" class="view">
+      <div class="hero">
+        <div class="hero-shield" id="hero-shield"></div>
+        <h2 id="hero-title">GFFL</h2>
+        <p class="season-line" id="hero-season">Graham Family Football League</p>
+      </div>
+
+      <div class="menu-card" onclick="startPicks()">
+        <div class="menu-icon">🏈</div>
+        <div class="menu-body"><h3>Make Your Picks</h3><p>Submit or change this week's picks</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
+      <div class="menu-card" onclick="openLeaderboard()">
+        <div class="menu-icon">🏆</div>
+        <div class="menu-body"><h3>See Leaderboard</h3><p>Standings by conference &amp; division</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
+      <div class="menu-card" onclick="openAlma()">
+        <div class="menu-icon">🔥</div>
+        <div class="menu-body"><h3>Alma Cup</h3><p>Longest survival streak — last one standing</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
+      <div class="menu-card" onclick="openNewsletter()">
+        <div class="menu-icon">📰</div>
+        <div class="menu-body"><h3>This Week's Newsletter</h3><p>Weekly recaps &amp; the GFFL archive</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
+
+      <span class="admin-link" onclick="openAdmin()">Commissioner access</span>
+
+      <div class="text-toggle" id="text-toggle">
+        <button class="tt-btn" data-size="small">Small Text</button>
+        <button class="tt-btn" data-size="large">Large Text</button>
+      </div>
+    </section>
+
+    <!-- ── Picks ── -->
+    <section id="view-picks" class="view"><div id="picks-content"></div></section>
+
+    <!-- ── Everyone's picks ── -->
+    <section id="view-everyone" class="view"><div id="everyone-content"></div></section>
+
+    <!-- ── Leaderboard ── -->
+    <section id="view-leaderboard" class="view"><div id="leaderboard-content"></div></section>
+
+    <!-- ── Alma Cup ── -->
+    <section id="view-alma" class="view"><div id="alma-content"></div></section>
+
+    <!-- ── Newsletter ── -->
+    <section id="view-newsletter" class="view">
+      <p class="section-title">This Week's Newsletter</p>
+      <div class="placeholder">
+        <div class="big">📰</div>
+        <h3>Coming Soon</h3>
+        <p>Conference newsletters and the 27-year GFFL archive will live here, browsable by year and week.</p>
+      </div>
+    </section>
+
+    <!-- ── Admin ── -->
+    <section id="view-admin" class="view"><div id="admin-content"></div></section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <?!= include('LogoData') ?>
+  <?!= include('Scripts') ?>
+</body>
+</html>

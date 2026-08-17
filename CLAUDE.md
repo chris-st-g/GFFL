@@ -24,20 +24,22 @@
 
 ## File Map
 
+All source files live under `src/` — clasp is configured to push from that directory.
+
 | File | Purpose |
 |---|---|
-| `Code.gs` | Web app entry point — `doGet()`, `include()`, `getLeagueData()`, setup route |
-| `ESPN.gs` | Fetches NFL matchups from ESPN public API — `getWeeklyMatchups()` |
-| `Scoring.gs` | All scoring logic — `classifyGame()`, `resolvePickPoints()`, `resolvePickResult()`, `isGraceBowlWeek()` |
-| `Sheets.gs` | All Sheets read/write — Config, Players, Picks, BonusPoints, `scoreWeekPicks()` |
-| `Picks.gs` | Pick submission and pick page data — `submitPick()`, `getPickPageData()` |
-| `Standings.gs` | Calculates and returns league standings — `getStandings()` |
-| `Admin.gs` | Commissioner panel — login, set week, add bonus points, trigger scoring |
-| `Setup.gs` | One-time setup — `setupSheet()`, `seedTestPlayers()`, `seedRandomPicks()`, `migrateAddResultColumn()` |
-| `Index.html` | SPA shell — 4 tabs: Picks, Standings, Games, Admin |
-| `Styles.html` | All CSS — included into Index.html via `<?!= include('Styles') ?>` |
-| `Scripts.html` | All frontend JS — included into Index.html via `<?!= include('Scripts') ?>` |
-| `appsscript.json` | Apps Script manifest — OAuth scopes, webapp config |
+| `src/Code.gs` | Web app entry point — `doGet()`, `include()`, `getLeagueData()`, setup route |
+| `src/ESPN.gs` | Fetches NFL matchups from ESPN public API — `getWeeklyMatchups()` |
+| `src/Scoring.gs` | All scoring logic — `classifyGame()`, `resolvePickPoints()`, `resolvePickResult()`, `isGraceBowlWeek()` |
+| `src/Sheets.gs` | All Sheets read/write — Config, Players, Picks, BonusPoints, `scoreWeekPicks()` |
+| `src/Picks.gs` | Pick submission and pick page data — `submitPick()`, `getPickPageData()` |
+| `src/Standings.gs` | Calculates and returns league standings — `getStandings()` |
+| `src/Admin.gs` | Commissioner panel — login, set week, add bonus points, trigger scoring |
+| `src/Setup.gs` | One-time setup — `setupSheet()`, `seedTestPlayers()`, `seedRandomPicks()`, `migrateAddResultColumn()` |
+| `src/Index.html` | SPA shell — 4 tabs: Picks, Standings, Games, Admin |
+| `src/Styles.html` | All CSS — included into Index.html via `<?!= include('Styles') ?>` |
+| `src/Scripts.html` | All frontend JS — included into Index.html via `<?!= include('Scripts') ?>` |
+| `src/appsscript.json` | Apps Script manifest — OAuth scopes, webapp config |
 
 ---
 
@@ -93,7 +95,7 @@
 | 4–18 | **Trey** — win records differ by exactly 1 | Underdog: 3 pts, Favorite: 1 pt |
 | 4–18 | **Regular** — win records differ by 2+ | Both teams: 1 pt |
 
-- **Ties** count as a win — picker earns full point value
+- **Ties** earn **half** the pick's point value (Deuce tie = 1, Trey 3-side tie = 1.5, Trey 1-side tie = 0.5)
 - **Grace Bowl** = weeks 16–18. Same scoring rules, different UI label only
 - Win records are looked up from ESPN at game time (not season totals)
 
@@ -178,11 +180,29 @@
 
 ## Current Status
 
-*Last updated: 2026-04-14*
+*Last updated: 2026-08-17*
 
-- All code built and pushed to GitHub
-- App is deployed at the live URL above
-- **Known issue:** Web app has had `google.script.run` completion problems — a 20s timeout and explicit OAuth scopes were added to debug
-- **Pending:** Admin password not yet set — run `setAdminPassword('yourPassword')` from the Apps Script editor
-- **Pending:** Player names are still placeholders (Player1–Player25) until real names are added via the Admin panel
-- **Planned:** Halo Bowl / playoff feature after regular season is stable
+### Deployment strategy — TWO deployments (important)
+- **LIVE / testers** — deploymentId `AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I` — currently **@43, FROZEN** while the user gathers tester feedback. Do NOT `clasp deploy` this without the user's OK.
+- **PREVIEW / user** — deploymentId `AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt` — currently **@49**, gets all new work for review. `clasp push` updates HEAD only; versioned deployments stay pinned until re-deployed. Both share the same Sheet + Config.
+- When user approves, promote preview → live by `clasp deploy --deploymentId <LIVE> ...`.
+
+### Built
+- **Conferences (called "Chapters"):** Mt. Washington, Louisville, St. Gertrude, St. George. `LEAGUE_STRUCTURE` in `Sheets.gs`. Divisions still placeholder surnames; sample roster is throwaway.
+- **Scoring:** Deuce/Trey on WINS ONLY, flat Weeks 1–3 (`EARLY_FLAT_WEEKS=3`), tie = HALF points; per-conference Rookie of Year.
+- **Pick flow:** conference→name→games; tap-to-Confirm (optimistic, instant); per-game kickoff lock; started games shown greyed (final) / red-glow (live) with live scores + winner; re-pick from "See Everyone's Picks"; sort by time / Deuce-Trey-first.
+- **Bonuses:** per-team, scoped LEAGUE or per-chapter (additive). `GameTeamBonuses` sheet. Admin editor = scope pills + stepper +/− + Confirm.
+- **Alma Cup** (`Alma.gs`, 🔥 card): survival streak, per-conf resolution, `setAlmaWinner()` override.
+- **Performance:** base-games CacheService (120s, one ESPN fetch/week for all conferences), background prefetch on open, client-side conference cache (`STATE.confData`), `LockService` on pick writes.
+- **Logo:** real GFFL shield embedded as data-URI (`src/LogoData.html`, source `src/assets/gffl-logo.png`). Small/Large text toggle on home.
+- **ESPN:** MUST use `cdn.espn.com/core` (site.api 403s from GAS). Live scores/status/winner already in the cached data — no extra calls.
+
+### Go-live features (BUILT but gated off — only active when auto-week is ON)
+- **Automatic Week** (Admin toggle) → reads live NFL week/season from ESPN (`getActiveWeek/Season`).
+- **Picks-open window** (`getPicksOpenInfo`): next week visible-but-locked immediately after the prior week's last game; picks open **24h after that final game**; locks on real kickoffs; times in viewer TZ (default ET).
+- **Demo mode:** Config `PreviewMode=TRUE`, 2025 Wk 6, fake statuses + fake odds so the pick UI is demoable.
+
+### Pending / next
+- Replace sample roster with **real names + division mapping** (user provides).
+- **Go-live switch:** Admin → Automatic Week ON; set `PreviewMode` OFF; load real roster; promote preview→live. Optional: cache-warming cron (needs `script.scriptapp` scope re-added).
+- **Phase 2:** Grace Bowl tournament + Halo Bowl bracket (qualifiers: Grace Bowl champ + Alma Cup + per-conf Rookie of Year).
