@@ -789,13 +789,39 @@ function screenEveryone(){
 function renderEveryone(rows){
   var c=document.getElementById('everyone-content');
   var conf=STATE.pickConf||STATE.leaderConf;
+  if(!STATE.nameGroupMode) STATE.nameGroupMode='family';   // shared with pick-name screen
+  var fams=familiesOf(conf), hasFam=fams.length>0;
+  var mode=(STATE.nameGroupMode==='division')?'division':(hasFam?'family':'division');
+  // name -> family lookup from the roster already in state
+  var famOf={}; STATE.players.forEach(function(p){ if(p.conference===conf) famOf[p.name]=p.family||''; });
+
   var h='<p class="section-title">'+esc(conf)+' — '+esc(STATE.weekLabel||('Week '+STATE.currentWeek))+' Picks</p>';
   h+='<p class="ep-hint">Tap anyone whose pick isn\'t locked to make or change their pick.</p>';
-  divisionsOf(conf).forEach(function(div){
-    var people=rows.filter(function(r){return r.division===div;});
-    if(!people.length) return;
-    h+='<div class="ep-div"><h4>'+esc(div)+'</h4>';
-    people.sort(function(a,b){return a.playerName.localeCompare(b.playerName);}).forEach(function(r){
+  if(hasFam){
+    h+='<div class="pills group-toggle">'+
+       '<button class="pill'+(mode==='family'?' active':'')+'" data-mode="family">Family</button>'+
+       '<button class="pill'+(mode==='division'?' active':'')+'" data-mode="division">Division</button>'+
+       '</div>';
+  }
+
+  var groups=[];
+  if(mode==='family'){
+    fams.forEach(function(fam){
+      var ppl=rows.filter(function(r){return (famOf[r.playerName]||'')===fam;});
+      if(ppl.length) groups.push({title:fam, people:ppl});
+    });
+    var noFam=rows.filter(function(r){return !(famOf[r.playerName]||'');});
+    if(noFam.length) groups.push({title:'Other', people:noFam});
+  } else {
+    divisionsOf(conf).forEach(function(div){
+      var ppl=rows.filter(function(r){return r.division===div;});
+      if(ppl.length) groups.push({title:div, people:ppl});
+    });
+  }
+
+  groups.forEach(function(g){
+    h+='<div class="ep-div"><h4>'+esc(g.title)+'</h4>';
+    g.people.sort(function(a,b){return a.playerName.localeCompare(b.playerName);}).forEach(function(r){
       var canPick=!r.locked;
       var team=r.teamAbbr?('<span class="ep-team">'+esc(r.teamAbbr)+'</span>'+(r.locked?'<span class="ep-lock">🔒</span>':'')):'<span class="ep-team none">— no pick —</span>';
       var chev=canPick?'<span class="ep-chev">&#8250;</span>':'';
@@ -805,6 +831,7 @@ function renderEveryone(rows){
     h+='</div>';
   });
   c.innerHTML=h;
+  bindAll(c,'.group-toggle .pill',function(el){ STATE.nameGroupMode=el.dataset.mode; renderEveryone(rows); });
   bindAll(c,'.ep-tappable',function(el){
     STATE.pickConf=conf; STATE.pickName=el.dataset.name; localStorage.setItem('gffl_player',STATE.pickName);
     navGo(screenPickGames);
