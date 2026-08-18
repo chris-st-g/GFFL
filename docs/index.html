@@ -424,20 +424,36 @@ window.addEventListener('load', function(){
   applyTextSize(localStorage.getItem('gffl_textsize')||'small');
   document.querySelectorAll('.tt-btn').forEach(function(b){ b.addEventListener('click',function(){ applyTextSize(b.dataset.size); }); });
 
+  // Instant open: render Home from the last cached league data, then refresh the
+  // live (ESPN-backed) data in the background. Only the very first ever open waits.
+  var cached=null; try{ cached=JSON.parse(localStorage.getItem('gffl_league')||'null'); }catch(e){}
+  var haveCache = !!(cached && cached.conferenceNames && cached.conferenceNames.length);
+
   var t=setTimeout(function(){
+    if(haveCache) return;   // already showing something
     var el=document.getElementById('loading');
     if(el && el.textContent.indexOf('Loading')===0){
       el.innerHTML='<p class="error-msg">Could not reach the app backend.<br>Refresh the page, or make sure the latest deployment version is live.</p>';
     }
   },20000);
 
+  if(haveCache) onLoaded(cached);   // paint Home immediately
+
   google.script.run
-    .withSuccessHandler(function(data){ clearTimeout(t); onLoaded(data); })
-    .withFailureHandler(function(e){ clearTimeout(t); document.getElementById('loading').innerHTML='<p class="error-msg">Failed to load: '+(e.message||e)+'</p>'; })
+    .withSuccessHandler(function(data){
+      clearTimeout(t);
+      try{ localStorage.setItem('gffl_league', JSON.stringify(data)); }catch(e){}
+      if(haveCache) refreshLeague(data); else onLoaded(data);
+    })
+    .withFailureHandler(function(e){
+      clearTimeout(t);
+      if(!haveCache) document.getElementById('loading').innerHTML='<p class="error-msg">Failed to load: '+(e.message||e)+'</p>';
+    })
     .getLeagueData();
 });
 
-function onLoaded(data){
+// Sets STATE + header/hero from league data (no view change — safe to call again).
+function applyLeagueData(data){
   STATE.players=data.players||[];
   STATE.playerNames=data.playerNames||[];
   STATE.conferenceNames=data.conferenceNames||[];
@@ -446,13 +462,24 @@ function onLoaded(data){
   STATE.weekLabel=data.weekLabel||('Week '+data.currentWeek);
   STATE.season=data.season;
   STATE.autoWeek=!!data.autoWeek;
-  STATE.leaderConf=STATE.conferenceNames[0]||null;
+  if(!STATE.leaderConf) STATE.leaderConf=STATE.conferenceNames[0]||null;
+  document.getElementById('week-badge').textContent=(STATE.weekLabel||'').toUpperCase();
+  if(data.season) document.getElementById('hero-season').textContent='Season '+toRoman(Number(data.season)-1998);
+}
 
-  document.getElementById('week-badge').textContent=STATE.weekLabel.toUpperCase();
-  document.getElementById('hero-season').textContent='Season '+toRoman(Number(data.season)-1998);
+// First paint: apply data, reveal Home, warm the pick data.
+function onLoaded(data){
+  applyLeagueData(data);
   document.getElementById('loading').classList.add('hidden');
   goHome();
   prefetchPicks();   // warm the game data in the background so the pick screen is instant
+}
+
+// Background refresh: update in place without disturbing the current screen.
+function refreshLeague(data){
+  var weekChanged = STATE.currentWeek !== data.currentWeek;
+  applyLeagueData(data);
+  if(weekChanged){ STATE.confData={}; STATE.standings=null; STATE.alma=null; prefetchPicks(); }
 }
 
 // On open, warm the remembered player's conference data in the background so

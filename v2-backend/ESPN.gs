@@ -14,9 +14,13 @@ var ESPN_BASE = 'https://cdn.espn.com/core/nfl/scoreboard';
 
 var _espnCurrent;   // memoized per execution
 
-/** Asks ESPN for the current NFL week/season based on today's date. */
+/** Asks ESPN for the current NFL week/season. Cached ~10 min (rarely changes). */
 function espnCurrent() {
   if (_espnCurrent !== undefined) return _espnCurrent;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('espn_current');
+  if (hit) { try { _espnCurrent = JSON.parse(hit); return _espnCurrent; } catch (e) {} }
+
   _espnCurrent = null;
   try {
     var resp = UrlFetchApp.fetch(ESPN_BASE + '?xhr=1', {
@@ -37,6 +41,8 @@ function espnCurrent() {
       if (wk && sn) _espnCurrent = { week: Number(wk), season: Number(sn), seasonType: Number(st) || 2 };
     }
   } catch (e) { Logger.log('espnCurrent error: ' + e.message); }
+
+  if (_espnCurrent) { try { cache.put('espn_current', JSON.stringify(_espnCurrent), 600); } catch (e) {} }
   return _espnCurrent;
 }
 
