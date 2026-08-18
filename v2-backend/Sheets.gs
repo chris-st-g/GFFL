@@ -186,7 +186,8 @@ function getPlayers() {
         name:       row[1],
         conference: row[2] || '',
         division:   row[3] || '',
-        isRookie:   row[4] === true || row[4] === 'TRUE'
+        isRookie:   row[4] === true || row[4] === 'TRUE',
+        family:     familyOf(row[2] || '', row[1])
       };
     })
     .sort(function(a, b) { return a.name.localeCompare(b.name); });

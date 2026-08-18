@@ -158,6 +158,38 @@ var REAL_ROSTERS = {
 };
 
 /**
+ * Family groupings (an alternative to Division in the pick-name flow), ordered.
+ * Keyed by conference. Members are player nicknames. Only chapters listed here
+ * get family grouping; others fall back to division grouping in the UI.
+ */
+var FAMILIES = {
+  'St. George Chapter': [
+    { family: 'Micah',    members: ['O.T.', 'St. Gator', "Lil' Bear", 'Golden Bear', "Lil' Peanut"] },
+    { family: 'Tom',      members: ['Knife Hands', 'Big Red', 'Globetrotter', 'Relax', 'SCStG', 'Colonel'] },
+    { family: 'Connor',   members: ['Shaka', 'Chips', 'Dip', 'Pope'] },
+    { family: 'Chris',    members: ['Danger Boy', 'Sweet T', 'Valley Girl', 'GK Cheeserton'] },
+    { family: 'Dad',      members: ['Ti Eagle', 'Snow White'] },
+    { family: 'Siblings', members: ['CollaR', 'Golden Hour', 'Crazy Legs'] }
+  ]
+};
+
+/** The family a player belongs to, or '' if none. */
+function familyOf(conference, name) {
+  var fams = FAMILIES[conference];
+  if (!fams) return '';
+  for (var i = 0; i < fams.length; i++) {
+    if (fams[i].members.indexOf(name) !== -1) return fams[i].family;
+  }
+  return '';
+}
+
+/** Ordered family names for a conference (empty if that chapter has none). */
+function familiesForConference(conference) {
+  var fams = FAMILIES[conference];
+  return fams ? fams.map(function(f) { return f.family; }) : [];
+}
+
+/**
  * Route (?action=realroster): replaces the sample roster for the chapters in
  * REAL_ROSTERS with the real Grahamchises (by nickname). Leaves other chapters
  * (Mt. Washington) untouched. Also drops any picks that referenced removed names.

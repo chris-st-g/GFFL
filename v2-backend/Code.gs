@@ -236,6 +236,9 @@ function getLeagueData() {
     playerNames:     playerNames,
     conferenceNames: getConferenceNames(),
     leagueStructure: LEAGUE_STRUCTURE,
+    familyStructure: getConferenceNames().map(function(c) {
+      return { conference: c, families: familiesForConference(c) };
+    }),
     currentWeek:     currentWeek,
     weekLabel:       weekLabel(currentWeek, getActiveSeasonType()),
     season:          season,

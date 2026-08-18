@@ -458,6 +458,7 @@ function applyLeagueData(data){
   STATE.playerNames=data.playerNames||[];
   STATE.conferenceNames=data.conferenceNames||[];
   STATE.leagueStructure=data.leagueStructure||[];
+  STATE.familyStructure=data.familyStructure||[];
   STATE.currentWeek=data.currentWeek;
   STATE.weekLabel=data.weekLabel||('Week '+data.currentWeek);
   STATE.season=data.season;
@@ -548,20 +549,48 @@ function screenPickConf(){
   bindAll(c,'.choose-btn',function(el){ STATE.pickConf=el.dataset.conf; loadConfData(el.dataset.conf); navGo(screenPickName); });
 }
 
+function familiesOf(conf){ var e=(STATE.familyStructure||[]).filter(function(c){return c.conference===conf;})[0]; return e?e.families:[]; }
+
 function screenPickName(){
   showView('picks');
   var c=document.getElementById('picks-content');
-  var h='<p class="section-title">'+esc(STATE.pickConf)+' — Choose a Name</p>';
-  divisionsOf(STATE.pickConf).forEach(function(div){
-    var people=STATE.players.filter(function(p){return p.conference===STATE.pickConf&&p.division===div;});
-    if(!people.length) return;
-    h+='<p class="name-group-title">'+esc(div)+'</p><div class="choose-grid">';
-    people.forEach(function(p){
+  var conf=STATE.pickConf;
+  if(!STATE.nameGroupMode) STATE.nameGroupMode='family';   // default Family
+  var fams=familiesOf(conf), hasFam=fams.length>0;
+  var mode=(STATE.nameGroupMode==='division')?'division':(hasFam?'family':'division');
+
+  var h='<p class="section-title">'+esc(conf)+' — Choose a Name</p>';
+  if(hasFam){
+    h+='<div class="pills group-toggle">'+
+       '<button class="pill'+(mode==='family'?' active':'')+'" data-mode="family">Family</button>'+
+       '<button class="pill'+(mode==='division'?' active':'')+'" data-mode="division">Division</button>'+
+       '</div>';
+  }
+
+  var groups=[];
+  if(mode==='family'){
+    fams.forEach(function(fam){
+      var ppl=STATE.players.filter(function(p){return p.conference===conf && p.family===fam;});
+      if(ppl.length) groups.push({title:fam, people:ppl});
+    });
+    var noFam=STATE.players.filter(function(p){return p.conference===conf && !p.family;});
+    if(noFam.length) groups.push({title:'Other', people:noFam});
+  } else {
+    divisionsOf(conf).forEach(function(div){
+      var ppl=STATE.players.filter(function(p){return p.conference===conf && p.division===div;});
+      if(ppl.length) groups.push({title:div, people:ppl});
+    });
+  }
+
+  groups.forEach(function(g){
+    h+='<p class="name-group-title">'+esc(g.title)+'</p><div class="choose-grid">';
+    g.people.forEach(function(p){
       h+='<button class="choose-btn" data-name="'+esc(p.name)+'"><span>'+esc(p.name)+(p.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</span><span class="chev">&#8250;</span></button>';
     });
     h+='</div>';
   });
   c.innerHTML=h;
+  bindAll(c,'.group-toggle .pill',function(el){ STATE.nameGroupMode=el.dataset.mode; screenPickName(); });
   bindAll(c,'.choose-btn',function(el){
     STATE.pickName=el.dataset.name;
     localStorage.setItem('gffl_player',STATE.pickName);
