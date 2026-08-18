@@ -1,0 +1,736 @@
+<script>
+// ─── Shield logo (inline SVG) ───────────────────────────────────────────────
+var SHIELD_SVG =
+  '<svg viewBox="0 0 100 118" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M12 15 Q31 8 50 4 Q69 8 88 15 L88 46 Q88 88 50 115 Q12 88 12 46 Z" fill="#14265C"/>' +
+    '<path d="M14 57 H86 V70 Q86 86 50 112 Q14 86 14 70 Z" fill="#ffffff"/>' +
+    '<g transform="rotate(-18 50 33)">' +
+      '<ellipse cx="50" cy="33" rx="15" ry="9" fill="#ffffff"/>' +
+      '<line x1="43" y1="33" x2="57" y2="33" stroke="#14265C" stroke-width="1.5"/>' +
+      '<line x1="46" y1="30" x2="46" y2="36" stroke="#14265C" stroke-width="1.2"/>' +
+      '<line x1="49.5" y1="29.6" x2="49.5" y2="36.4" stroke="#14265C" stroke-width="1.2"/>' +
+      '<line x1="53" y1="30" x2="53" y2="36" stroke="#14265C" stroke-width="1.2"/>' +
+    '</g>' +
+    '<g fill="#ffffff" font-size="8" text-anchor="middle" font-family="Arial">' +
+      '<text x="24" y="30">★</text><text x="31" y="43">★</text>' +
+      '<text x="76" y="30">★</text><text x="69" y="43">★</text>' +
+    '</g>' +
+    '<text x="50" y="82" font-family="Arial Black, Arial, sans-serif" font-size="17" font-weight="900" fill="#C8202F" text-anchor="middle">GFFL</text>' +
+  '</svg>';
+
+// ─── State ──────────────────────────────────────────────────────────────────
+var STATE = {
+  players:[], playerNames:[], conferenceNames:[], leagueStructure:[],
+  currentWeek:1, season:2025,
+  pickConf:null, pickName:localStorage.getItem('gffl_player')||null,
+  leaderConf:null, standings:null, view:'home', confData:{}
+};
+
+// ─── Nav stack (back button walks the flow; empty = home) ───────────────────
+var NAV = [];
+function navGo(fn){ NAV.push(fn); fn(); updateBack(); }
+function goBack(){ NAV.pop(); if(NAV.length){ NAV[NAV.length-1](); } else { showView('home'); } updateBack(); }
+function goHome(){ NAV=[]; showView('home'); updateBack(); }
+function updateBack(){ document.getElementById('back-btn').classList.toggle('show', NAV.length>0); }
+function showView(name){
+  STATE.view=name;
+  document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+  var el=document.getElementById('view-'+name); if(el) el.classList.add('active');
+  window.scrollTo(0,0);
+}
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('load', function(){
+  var logoMarkup = (typeof GFFL_LOGO!=='undefined' && GFFL_LOGO)
+    ? '<img src="'+GFFL_LOGO+'" alt="GFFL" style="width:100%;height:100%;object-fit:contain">'
+    : SHIELD_SVG;
+  document.getElementById('header-shield').innerHTML = logoMarkup;
+  document.getElementById('hero-shield').innerHTML   = logoMarkup;
+
+  // Custom menu-icon images (fall back to emoji if data missing)
+  if (typeof GFFL_TIGER!=='undefined' && GFFL_TIGER)
+    document.getElementById('icon-picks').innerHTML = '<img class="menu-icon-img contain" src="'+GFFL_TIGER+'" alt="">';
+  if (typeof GFFL_ALMA!=='undefined' && GFFL_ALMA)
+    document.getElementById('icon-alma').innerHTML  = '<img class="menu-icon-img rect" src="'+GFFL_ALMA+'" alt="">';
+
+  applyTextSize(localStorage.getItem('gffl_textsize')||'small');
+  document.querySelectorAll('.tt-btn').forEach(function(b){ b.addEventListener('click',function(){ applyTextSize(b.dataset.size); }); });
+
+  var t=setTimeout(function(){
+    var el=document.getElementById('loading');
+    if(el && el.textContent.indexOf('Loading')===0){
+      el.innerHTML='<p class="error-msg">Could not reach the app backend.<br>Refresh the page, or make sure the latest deployment version is live.</p>';
+    }
+  },20000);
+
+  google.script.run
+    .withSuccessHandler(function(data){ clearTimeout(t); onLoaded(data); })
+    .withFailureHandler(function(e){ clearTimeout(t); document.getElementById('loading').innerHTML='<p class="error-msg">Failed to load: '+(e.message||e)+'</p>'; })
+    .getLeagueData();
+});
+
+function onLoaded(data){
+  STATE.players=data.players||[];
+  STATE.playerNames=data.playerNames||[];
+  STATE.conferenceNames=data.conferenceNames||[];
+  STATE.leagueStructure=data.leagueStructure||[];
+  STATE.currentWeek=data.currentWeek;
+  STATE.weekLabel=data.weekLabel||('Week '+data.currentWeek);
+  STATE.season=data.season;
+  STATE.autoWeek=!!data.autoWeek;
+  STATE.leaderConf=STATE.conferenceNames[0]||null;
+
+  document.getElementById('week-badge').textContent=STATE.weekLabel.toUpperCase();
+  document.getElementById('hero-season').textContent=data.season+' Season';
+  document.getElementById('loading').classList.add('hidden');
+  goHome();
+  prefetchPicks();   // warm the game data in the background so the pick screen is instant
+}
+
+// On open, warm the remembered player's conference data in the background so
+// tapping into "Make Your Picks" is instant (no loading screen).
+function prefetchPicks(){
+  var name=STATE.pickName; if(!name) return;
+  var p=STATE.players.filter(function(x){return x.name===name;})[0];
+  if(p && p.conference) loadConfData(p.conference);
+}
+
+// Loads a whole conference's pick data once and caches it client-side.
+function loadConfData(conf, cb){
+  if(!conf){ if(cb) cb(); return; }
+  if(STATE.confData[conf]){ if(cb) cb(); return; }
+  google.script.run
+    .withSuccessHandler(function(d){ STATE.confData[conf]=d; if(cb) cb(); })
+    .withFailureHandler(function(){ if(cb) cb(); })
+    .getConferencePickData(conf);
+}
+
+// Builds a per-person pick view from the cached conference data (no server call).
+function pickDataFor(cd, name){
+  var team=cd.picks[name]||null, locked=false;
+  if(team){ for(var i=0;i<cd.games.length;i++){ var g=cd.games[i]; if(g.awayAbbr===team||g.homeAbbr===team){ locked=g.locked; break; } } }
+  return { games:cd.games, existingPick:team, existingLocked:locked, week:cd.week, season:cd.season,
+           isGraceBowl:cd.isGraceBowl, picksOpen:cd.picksOpen, picksOpenAt:cd.picksOpenAt };
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function bindAll(root,sel,fn){ root.querySelectorAll(sel).forEach(function(el){ el.addEventListener('click',function(){ fn(el); }); }); }
+function divisionsOf(conf){ var e=STATE.leagueStructure.filter(function(c){return c.conference===conf;})[0]; return e?e.divisions:[]; }
+function showToast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3200); }
+
+function applyTextSize(size){
+  document.documentElement.classList.toggle('big-text', size==='large');
+  localStorage.setItem('gffl_textsize', size);
+  document.querySelectorAll('.tt-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.size===size); });
+}
+
+// ─── Home menu actions ──────────────────────────────────────────────────────
+function startPicks(){ STATE.pickConf=null; navGo(screenPickConf); }
+function openLeaderboard(){ navGo(screenLeaderboard); }
+function openAlma(){ if(!STATE.almaConf) STATE.almaConf=STATE.conferenceNames[0]; navGo(screenAlma); }
+function openNewsletter(){ navGo(function(){ showView('newsletter'); }); }
+function openAdmin(){ navGo(screenAdmin); }
+
+// ─── PICK FLOW ──────────────────────────────────────────────────────────────
+function screenPickConf(){
+  showView('picks');
+  var c=document.getElementById('picks-content');
+  var h='<p class="section-title">Make Your Picks — Choose Conference</p><div class="choose-grid">';
+  STATE.conferenceNames.forEach(function(conf){
+    var n=STATE.players.filter(function(p){return p.conference===conf;}).length;
+    h+='<button class="choose-btn" data-conf="'+esc(conf)+'"><span>'+esc(conf)+'<br><span class="sub">'+n+' grahamchises</span></span><span class="chev">&#8250;</span></button>';
+  });
+  h+='</div>';
+  c.innerHTML=h;
+  bindAll(c,'.choose-btn',function(el){ STATE.pickConf=el.dataset.conf; loadConfData(el.dataset.conf); navGo(screenPickName); });
+}
+
+function screenPickName(){
+  showView('picks');
+  var c=document.getElementById('picks-content');
+  var h='<p class="section-title">'+esc(STATE.pickConf)+' — Choose a Name</p>';
+  divisionsOf(STATE.pickConf).forEach(function(div){
+    var people=STATE.players.filter(function(p){return p.conference===STATE.pickConf&&p.division===div;});
+    if(!people.length) return;
+    h+='<p class="name-group-title">'+esc(div)+'</p><div class="choose-grid">';
+    people.forEach(function(p){
+      h+='<button class="choose-btn" data-name="'+esc(p.name)+'"><span>'+esc(p.name)+(p.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</span><span class="chev">&#8250;</span></button>';
+    });
+    h+='</div>';
+  });
+  c.innerHTML=h;
+  bindAll(c,'.choose-btn',function(el){
+    STATE.pickName=el.dataset.name;
+    localStorage.setItem('gffl_player',STATE.pickName);
+    navGo(screenPickGames);
+  });
+}
+
+function screenPickGames(){
+  showView('picks');
+  var c=document.getElementById('picks-content');
+  var conf=STATE.pickConf;
+  var cd=STATE.confData[conf];
+  if(cd){ renderPickGames(pickDataFor(cd, STATE.pickName)); return; }   // instant from cache
+  c.innerHTML='<p class="loading">Loading '+(STATE.weekLabel||('Week '+STATE.currentWeek))+' games…</p>';
+  loadConfData(conf, function(){
+    var cd2=STATE.confData[conf];
+    if(cd2) renderPickGames(pickDataFor(cd2, STATE.pickName));
+    else c.innerHTML='<p class="error-msg">Could not load games. Please retry.</p>';
+  });
+}
+
+function renderPickGames(data){
+  var c=document.getElementById('picks-content');
+  STATE.pickData=data;                 // cached so the sort toggle re-renders without refetch
+  STATE.currentPick=data.existingPick; STATE.currentLocked=data.existingLocked; STATE.pickSelected=null;
+  if(!STATE.pickSort) STATE.pickSort='chrono';
+
+  var label=data.isGraceBowl?('GRACE BOWL · WEEK '+data.week):('WEEK '+data.week+' · '+esc(STATE.pickConf));
+  var h='<p class="section-title">Picking for '+esc(STATE.pickName)+' — '+label+'</p>';
+  if(data.picksOpen===false){ renderPickPreviewOnly(data, h); return; }
+  h+='<div id="pick-banner-slot">'+bannerHTML()+'</div>';
+  h+=pickActionsHTML();   // top copy
+
+  // Show ALL games. Not-yet-started ones are pickable; started ones are greyed
+  // out (disabled). Pickable games sort to the top, started games to the bottom.
+  var allGames=(data.games||[]).slice();
+  allGames.sort(function(a,b){
+    if(a.locked!==b.locked) return a.locked?1:-1;
+    if(STATE.pickSort==='value'){
+      var av=Math.max(a.homePoints,a.awayPoints), bv=Math.max(b.homePoints,b.awayPoints);
+      if(bv!==av) return bv-av;
+    }
+    return String(a.kickoff||'').localeCompare(String(b.kickoff||''));
+  });
+
+  var openCount=allGames.filter(function(g){ return !g.locked; }).length;
+  if(openCount>1){
+    h+='<div class="pills sort-pills">'+
+       '<button class="pill'+(STATE.pickSort==='chrono'?' active':'')+'" data-sort="chrono">By Time</button>'+
+       '<button class="pill'+(STATE.pickSort==='value'?' active':'')+'" data-sort="value">Deuce/Trey First</button></div>';
+  }
+
+  if(!allGames.length){
+    h+='<div class="empty">No games found for Week '+data.week+'.</div>';
+  } else {
+    allGames.forEach(function(g){ h+=gameCard(g,data.existingPick); });
+  }
+
+  // Sticky confirm bar (hidden until a team is tapped)
+  h+='<div id="confirm-bar" class="confirm-bar hidden"><span id="confirm-text"></span>'+
+     '<button class="btn btn-primary" id="confirm-btn">Confirm</button></div>';
+
+  h+=pickActionsHTML();   // bottom copy
+
+  c.innerHTML=h;
+
+  bindAll(c,'.sort-pills .pill',function(el){ STATE.pickSort=el.dataset.sort; renderPickGames(STATE.pickData); });
+  bindAll(c,'.team-btn',function(el){ if(el.disabled) return; selectPickTeam(el.dataset.team, Number(el.dataset.pts)); });
+  document.getElementById('confirm-btn').addEventListener('click',submitSelectedPick);
+  bindAll(c,'.act-another',function(){ navGo(screenPickName); });
+  bindAll(c,'.act-everyone',function(){ navGo(screenEveryone); });
+  bindAll(c,'.act-leader',function(){ STATE.leaderConf=STATE.pickConf; navGo(screenLeaderboard); });
+}
+
+// Live-mode "preview window": next week's games are visible but not pickable yet.
+function renderPickPreviewOnly(data, h){
+  var c=document.getElementById('picks-content');
+  var when=data.picksOpenAt
+    ? new Date(data.picksOpenAt).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+    : 'soon';
+  h+='<div class="pick-banner locked"><h3>🔒 Picks open '+esc(when)+'</h3>'+
+     '<p>Preview this week\'s matchups now — picking opens 24 hours after last week\'s final game.</p></div>';
+  h+=pickActionsHTML();
+  (data.games||[]).forEach(function(g){ h+=gameCard(g,data.existingPick); });
+  c.innerHTML=h;
+  c.querySelectorAll('.team-btn').forEach(function(b){ b.disabled=true; });
+  bindAll(c,'.act-another',function(){ navGo(screenPickName); });
+  bindAll(c,'.act-everyone',function(){ navGo(screenEveryone); });
+  bindAll(c,'.act-leader',function(){ STATE.leaderConf=STATE.pickConf; navGo(screenLeaderboard); });
+}
+
+function pickActionsHTML(){
+  return '<div class="actions">'+
+     '<button class="btn btn-navy act-another">Pick for Another Person</button>'+
+     '<button class="btn btn-ghost act-everyone">See Everyone\'s Picks</button>'+
+     '<button class="btn btn-ghost act-leader">Go to Leaderboard</button></div>';
+}
+
+// Banner reflecting the currently-saved pick (rebuilt in place after confirm).
+function bannerHTML(){
+  if(!STATE.currentPick) return '';
+  var locked=STATE.currentLocked;
+  return '<div class="pick-banner'+(locked?' locked':'')+'">'+
+    '<h3>'+(locked?'🔒 ':'✓ ')+'Current pick: '+esc(STATE.currentPick)+'</h3>'+
+    '<p>'+(locked?'That game has started — this pick is locked in.':'You can change it below until your game kicks off.')+'</p></div>';
+}
+
+// Tap a team → highlight it and reveal the Confirm bar (no server call yet).
+function selectPickTeam(team,pts){
+  STATE.pickSelected=team; STATE.pickSelectedPts=pts;
+  var c=document.getElementById('picks-content');
+  c.querySelectorAll('.team-btn').forEach(function(b){ b.classList.toggle('picking', b.dataset.team===team); });
+  document.getElementById('confirm-text').textContent='Pick '+team+' — '+pts+' pt'+(pts!==1?'s':'')+'?';
+  var btn=document.getElementById('confirm-btn'); btn.disabled=false; btn.textContent='Confirm';
+  document.getElementById('confirm-bar').classList.remove('hidden');
+}
+
+// Confirm → submit, then update banner + highlight in place (no reload/refetch).
+function submitSelectedPick(){
+  if(!STATE.pickSelected) return;
+  var team=STATE.pickSelected, prev=STATE.currentPick, name=STATE.pickName;
+  // Optimistic: update the UI instantly, save in the background.
+  STATE.currentPick=team; STATE.currentLocked=false; STATE.pickSelected=null;
+  var c=document.getElementById('picks-content');
+  c.querySelectorAll('.team-btn').forEach(function(b){ b.classList.remove('picking'); b.classList.toggle('saved', b.dataset.team===team); });
+  document.getElementById('pick-banner-slot').innerHTML=bannerHTML();
+  document.getElementById('confirm-bar').classList.add('hidden');
+  var cd=STATE.confData[STATE.pickConf]; if(cd) cd.picks[name]=team;   // reflect for switching people
+  STATE.standings=null;
+  showToast('Pick saved: '+team);
+  google.script.run
+    .withSuccessHandler(function(r){ if(!r || !r.success) revertPick(prev, name, (r&&r.message)||'Could not save pick.'); })
+    .withFailureHandler(function(e){ revertPick(prev, name, 'Could not save — please retry. ('+(e.message||e)+')'); })
+    .submitPick(name, team, STATE.currentWeek, STATE.season);
+}
+function revertPick(prev, name, msg){
+  var cd=STATE.confData[STATE.pickConf];
+  if(cd){ if(prev) cd.picks[name]=prev; else delete cd.picks[name]; }
+  if(name===STATE.pickName){ STATE.currentPick=prev; }
+  alert(msg);
+  if(STATE.view==='picks' && STATE.pickName===name) screenPickGames();
+}
+
+function gameCard(g,existingPick){
+  var badge = g.gameType==='Deuce'?'<span class="badge badge-deuce">Deuce</span>'
+            : g.gameType==='Trey' ?'<span class="badge badge-trey">Trey</span>'
+            :                      '<span class="badge badge-reg">Regular</span>';
+  if(g.isGraceBowl) badge+=' <span class="badge badge-grace">Grace</span>';
+  var odds='';
+  if(g.odds){ var parts=[]; if(g.odds.details)parts.push(g.odds.details); if(g.odds.overUnder!=null)parts.push('O/U '+g.odds.overUnder); odds=parts.join(' · '); }
+  var live=g.status==='in', final=g.status==='post', showScore=live||final;
+  var footTxt = live  ? ('🔴 LIVE' + (g.statusShort ? (' · '+esc(g.statusShort)) : ''))
+              : final ? ('Final'    + (g.statusShort && g.statusShort!=='Final' ? (' · '+esc(g.statusShort)) : ''))
+              : (g.statusDetail ? esc(g.statusDetail) : '');
+  var footCls='game-foot'+(live?' live':(final?' final':''));
+
+  var stateClass = live ? ' game-live' : ((final||g.locked) ? ' game-final' : '');
+  return '<div class="game-card'+stateClass+'">'+
+    '<div class="game-head"><span>'+badge+'</span><span class="game-odds">'+esc(odds)+'</span></div>'+
+    '<div class="teams">'+
+      teamBtn(g.awayAbbr,g.awayTeam,g.awayLogo,g.awayWins,g.awayLosses,g.awayPoints,existingPick===g.awayAbbr,g.awayBonus,g.locked,g.awayScore,showScore,final&&g.winner===g.awayAbbr)+
+      '<div class="vs">@</div>'+
+      teamBtn(g.homeAbbr,g.homeTeam,g.homeLogo,g.homeWins,g.homeLosses,g.homePoints,existingPick===g.homeAbbr,g.homeBonus,g.locked,g.homeScore,showScore,final&&g.winner===g.homeAbbr)+
+    '</div>'+
+    (footTxt?('<div class="'+footCls+'">'+footTxt+'</div>'):'')+
+  '</div>';
+}
+
+function teamBtn(abbr,name,logo,w,l,pts,picked,bonus,locked,score,showScore,isWinner){
+  var pc=pts>3?'p4':(pts===3?'p3':(pts===2?'p2':''));
+  var img=logo?('<img class="team-logo" src="'+esc(logo)+'" alt="">'):'<div class="team-logo"></div>';
+  var bonusBadge=(bonus>0)?'<div class="team-bonus">+'+bonus+' BONUS</div>':'';
+  var valueEl = showScore
+    ? '<div class="team-score'+(isWinner?' win':'')+'">'+(score!=null?score:0)+(isWinner?'<span class="win-tag">W</span>':'')+'</div>'
+    : '<div class="team-pts '+pc+'">'+pts+' pt'+(pts!==1?'s':'')+'</div>';
+  return '<button class="team-btn'+(picked?' saved':'')+(isWinner?' winner':'')+(showScore?' scored':'')+'" data-team="'+esc(abbr)+'" data-pts="'+pts+'"'+(locked?' disabled':'')+'>'+
+    img+
+    '<div class="team-abbr">'+esc(abbr)+'</div>'+
+    '<div class="team-name">'+esc(name)+'</div>'+
+    '<div class="team-rec">'+w+'-'+l+'</div>'+
+    valueEl+
+    bonusBadge+
+  '</button>';
+}
+
+// ─── EVERYONE'S PICKS ───────────────────────────────────────────────────────
+function screenEveryone(){
+  showView('everyone');
+  var c=document.getElementById('everyone-content');
+  c.innerHTML='<p class="loading">Loading picks…</p>';
+  google.script.run
+    .withSuccessHandler(function(rows){ renderEveryone(rows); })
+    .withFailureHandler(function(e){ c.innerHTML='<p class="error-msg">Could not load: '+(e.message||e)+'</p>'; })
+    .getConferencePicks(STATE.pickConf||STATE.leaderConf,STATE.currentWeek);
+}
+function renderEveryone(rows){
+  var c=document.getElementById('everyone-content');
+  var conf=STATE.pickConf||STATE.leaderConf;
+  var h='<p class="section-title">'+esc(conf)+' — '+esc(STATE.weekLabel||('Week '+STATE.currentWeek))+' Picks</p>';
+  h+='<p class="ep-hint">Tap anyone whose pick isn\'t locked to make or change their pick.</p>';
+  divisionsOf(conf).forEach(function(div){
+    var people=rows.filter(function(r){return r.division===div;});
+    if(!people.length) return;
+    h+='<div class="ep-div"><h4>'+esc(div)+'</h4>';
+    people.sort(function(a,b){return a.playerName.localeCompare(b.playerName);}).forEach(function(r){
+      var canPick=!r.locked;
+      var team=r.teamAbbr?('<span class="ep-team">'+esc(r.teamAbbr)+'</span>'+(r.locked?'<span class="ep-lock">🔒</span>':'')):'<span class="ep-team none">— no pick —</span>';
+      var chev=canPick?'<span class="ep-chev">&#8250;</span>':'';
+      h+='<div class="ep-row'+(canPick?' ep-tappable':'')+'"'+(canPick?' data-name="'+esc(r.playerName)+'"':'')+'>'+
+         '<span class="ep-name">'+esc(r.playerName)+'</span><span class="ep-right">'+team+chev+'</span></div>';
+    });
+    h+='</div>';
+  });
+  c.innerHTML=h;
+  bindAll(c,'.ep-tappable',function(el){
+    STATE.pickConf=conf; STATE.pickName=el.dataset.name; localStorage.setItem('gffl_player',STATE.pickName);
+    navGo(screenPickGames);
+  });
+}
+
+// ─── LEADERBOARD ────────────────────────────────────────────────────────────
+function screenLeaderboard(){
+  showView('leaderboard');
+  var c=document.getElementById('leaderboard-content');
+  if(STATE.standings){ renderLeaderboard(); return; }
+  c.innerHTML='<p class="loading">Loading standings…</p>';
+  google.script.run
+    .withSuccessHandler(function(data){ STATE.standings=data; renderLeaderboard(); })
+    .withFailureHandler(function(e){ c.innerHTML='<p class="error-msg">Could not load standings: '+(e.message||e)+'</p>'; })
+    .getStandings(STATE.season);
+}
+
+function renderLeaderboard(){
+  var data=STATE.standings, c=document.getElementById('leaderboard-content');
+  if(!STATE.leaderConf) STATE.leaderConf=STATE.conferenceNames[0];
+  var h='<p class="section-title">Leaderboard · '+data.season+' — Through Week '+Math.max(0,data.currentWeek-1)+'</p>';
+
+  // conference pills — 2×2 grid, "Chapter" dropped from labels
+  h+='<div class="pills grid2">';
+  STATE.conferenceNames.forEach(function(conf){
+    h+='<button class="pill'+(conf===STATE.leaderConf?' active':'')+'" data-conf="'+esc(conf)+'">'+esc(conf.replace(' Chapter',''))+'</button>';
+  });
+  h+='</div>';
+
+  var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.leaderConf;})[0];
+  if(!conf||!conf.divisions.length){
+    h+='<div class="empty">No standings yet for '+esc(STATE.leaderConf)+'.</div>';
+  } else {
+    conf.divisions.forEach(function(dv){
+      var top=dv.players.slice(0,2);
+      h+='<div class="lead-div"><div class="lead-div-head" data-conf="'+esc(conf.conference)+'" data-div="'+esc(dv.division)+'">'+
+         '<span>'+esc(dv.division)+'</span><span class="drill">View all '+dv.players.length+' &#8250;</span></div>';
+      top.forEach(function(p,i){ h+=leadRow(p,i+1); });
+      h+='</div>';
+    });
+    // Rookie of the Year (per conference)
+    var rooks=(data.rookieStandings||[]).filter(function(p){return p.conference===STATE.leaderConf;});
+    if(rooks.length){
+      h+='<p class="section-title">Rookie of the Year Race — '+esc(STATE.leaderConf)+'</p><div class="lead-div">';
+      rooks.slice(0,3).forEach(function(p,i){ h+=leadRow(p,i+1); });
+      h+='</div>';
+    }
+  }
+  c.innerHTML=h;
+  bindAll(c,'.pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
+  bindAll(c,'.lead-div-head',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
+}
+
+function leadRow(p,rank){
+  var rc=rank===1?'r1':(rank===2?'r2':'');
+  return '<div class="lead-row"><div class="lead-rank '+rc+'">'+rank+'</div>'+
+    '<div class="lead-name">'+esc(p.playerName)+(p.isRookie?'<span class="badge-rookie">R</span>':'')+
+      '<div class="lead-sub">'+(p.wins||0)+'-'+(p.losses||0)+(p.ties?'-'+p.ties:'')+'</div></div>'+
+    '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div></div>';
+}
+
+function renderDivision(confName,divName){
+  showView('leaderboard');
+  var c=document.getElementById('leaderboard-content');
+  var conf=(STATE.standings.conferences||[]).filter(function(x){return x.conference===confName;})[0];
+  var dv=conf?conf.divisions.filter(function(d){return d.division===divName;})[0]:null;
+  if(!dv){ c.innerHTML='<p class="empty">Division not found.</p>'; return; }
+  var h='<p class="section-title">'+esc(confName)+' · '+esc(divName)+' Division</p>';
+  h+='<table class="stbl"><thead><tr><th>#</th><th>Grahamchise</th><th class="c">Pts</th><th class="c">W</th><th class="c">L</th><th class="c">T</th></tr></thead><tbody>';
+  dv.players.forEach(function(p){
+    var r=p.divisionRank||1;
+    h+='<tr><td class="c">'+(r===1?'🏆':r)+'</td>'+
+       '<td><strong>'+esc(p.playerName)+'</strong>'+(p.isRookie?'<span class="badge-rookie">R</span>':'')+'</td>'+
+       '<td class="c pts">'+p.totalPoints+'</td>'+
+       '<td class="c rec-w">'+(p.wins||0)+'</td>'+
+       '<td class="c rec-l">'+(p.losses||0)+'</td>'+
+       '<td class="c rec-t">'+(p.ties||0)+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  c.innerHTML=h;
+}
+
+// ─── ALMA CUP ───────────────────────────────────────────────────────────────
+function screenAlma(){
+  showView('alma');
+  var c=document.getElementById('alma-content');
+  if(STATE.alma){ renderAlma(); return; }
+  c.innerHTML='<p class="loading">Loading Alma Cup…</p>';
+  google.script.run
+    .withSuccessHandler(function(d){ STATE.alma=d; renderAlma(); })
+    .withFailureHandler(function(e){ c.innerHTML='<p class="error-msg">Could not load: '+(e.message||e)+'</p>'; })
+    .getAlmaCup(STATE.season);
+}
+
+function renderAlma(){
+  var data=STATE.alma, c=document.getElementById('alma-content');
+  if(!STATE.almaConf) STATE.almaConf=STATE.conferenceNames[0];
+  var h='<p class="section-title">Alma Cup · Longest Survival Streak · Through Week '+data.lastWeek+'</p>';
+  h+='<div class="pills grid2">';
+  STATE.conferenceNames.forEach(function(cf){ h+='<button class="pill'+(cf===STATE.almaConf?' active':'')+'" data-conf="'+esc(cf)+'">'+esc(cf.replace(' Chapter',''))+'</button>'; });
+  h+='</div>';
+
+  var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.almaConf;})[0];
+  if(!conf){ h+='<div class="empty">No Alma Cup data for '+esc(STATE.almaConf)+'.</div>'; c.innerHTML=h; bindAll(c,'.pill',almaPill); return; }
+
+  h+='<div class="alma-status '+conf.status+'">'+almaStatusText(conf, data)+'</div>';
+
+  var alive=conf.players.filter(function(p){return p.alive;});
+  var out=conf.players.filter(function(p){return !p.alive;});
+
+  h+='<p class="section-title">Still Alive ('+alive.length+')</p>';
+  if(!alive.length){
+    h+='<div class="empty">Everyone has been eliminated.</div>';
+  } else {
+    h+='<div class="lead-div">';
+    alive.forEach(function(p){
+      h+='<div class="lead-row"><div class="lead-rank fire">🔥</div>'+
+         '<div class="lead-name">'+esc(p.name)+'<div class="lead-sub">'+esc(p.division)+' · '+p.streak+'-wk streak'+((data.seasonComplete&&p.bengals)?' · '+p.bengals+' CIN':'')+'</div></div>'+
+         '<div class="lead-pts">'+p.pointsRun+'<small>PTS</small></div></div>';
+    });
+    h+='</div>';
+  }
+
+  if(out.length){
+    h+='<p class="section-title">Eliminated</p><div class="lead-div">';
+    out.forEach(function(p){
+      h+='<div class="lead-row"><div class="lead-rank">'+(p.eliminatedWeek||'–')+'</div>'+
+         '<div class="lead-name">'+esc(p.name)+'<div class="lead-sub">'+esc(p.division)+' · out Wk '+p.eliminatedWeek+' · '+p.streak+'-wk streak</div></div>'+
+         '<div class="lead-pts">'+p.pointsRun+'<small>PTS</small></div></div>';
+    });
+    h+='</div>';
+  }
+
+  c.innerHTML=h;
+  bindAll(c,'.pill',almaPill);
+}
+function almaPill(el){ STATE.almaConf=el.dataset.conf; renderAlma(); }
+
+function almaStatusText(conf, data){
+  var w=esc(conf.winner);
+  switch(conf.status){
+    case 'clinched':  return '🏆 '+w+' — clinched it (last one standing)';
+    case 'by-streak': return '🏆 '+w+' — won on longest streak';
+    case 'by-points': return '🏆 '+w+' — won on the points tiebreaker';
+    case 'by-bengals':return '🏆 '+w+' — won on the Bengals tiebreaker';
+    case 'declared':  return '🏆 '+w+' — declared by the commissioner';
+    case 'needs_manual': return '⚖️ Tied: '+conf.tied.map(esc).join(', ')+' — commissioner to decide (reset / Indian Gut)';
+    case 'in_progress': return '⏳ In progress — '+conf.players.filter(function(p){return p.alive;}).length+' still alive through Week '+data.lastWeek;
+    default: return '—';
+  }
+}
+
+// ─── ADMIN ──────────────────────────────────────────────────────────────────
+var ADMIN_TOKEN=sessionStorage.getItem('gffl_admin_token')||null;
+
+function screenAdmin(){
+  showView('admin');
+  ADMIN_TOKEN?renderAdminPanel():renderAdminLogin();
+}
+function renderAdminLogin(){
+  var c=document.getElementById('admin-content');
+  c.innerHTML='<div class="admin-form"><h3>Commissioner Login</h3>'+
+    '<div class="form-group"><label>Password</label><input type="password" id="admin-pw" placeholder="Admin password"></div>'+
+    '<button class="btn btn-primary" id="admin-login-btn">Login</button>'+
+    '<p class="form-msg" id="admin-login-msg"></p></div>';
+  document.getElementById('admin-login-btn').addEventListener('click',adminDoLogin);
+  document.getElementById('admin-pw').addEventListener('keydown',function(e){ if(e.key==='Enter') adminDoLogin(); });
+}
+function adminDoLogin(){
+  var pw=document.getElementById('admin-pw').value;
+  google.script.run.withSuccessHandler(function(r){
+    if(r&&r.success){ ADMIN_TOKEN=r.token; sessionStorage.setItem('gffl_admin_token',r.token); renderAdminPanel(); }
+    else { var m=document.getElementById('admin-login-msg'); m.textContent=(r&&r.message)||'Incorrect password.'; m.className='form-msg err'; }
+  }).withFailureHandler(function(e){ var m=document.getElementById('admin-login-msg'); m.textContent='Error: '+(e.message||e); m.className='form-msg err'; }).adminLogin(pw);
+}
+
+function confOptions(){ return STATE.conferenceNames.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join(''); }
+function nameOptions(){ return STATE.players.map(function(p){return '<option value="'+esc(p.name)+'">'+esc(p.name)+'</option>';}).join(''); }
+
+function renderAdminPanel(){
+  var c=document.getElementById('admin-content');
+  c.innerHTML=
+   '<div class="admin-form"><h3>Automatic Week</h3>'+
+     '<p style="font-size:.8rem;color:var(--muted);margin:-4px 0 12px">When ON, the current week & season are read live from ESPN — no manual setting needed. When OFF, uses the manual week below.</p>'+
+     '<div class="form-group"><label class="checkbox-label"><input type="checkbox" id="aw-auto"'+(STATE.autoWeek?' checked':'')+'> Auto-detect week from ESPN</label></div>'+
+     '<button class="btn btn-primary" id="awauto-btn">Save</button><p class="form-msg" id="awauto-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Set Current Week (manual)</h3>'+
+     '<div class="form-group"><label>Week (1–18)</label><input type="number" id="aw" min="1" max="18"></div>'+
+     '<button class="btn btn-primary" id="aw-btn">Update Week</button><p class="form-msg" id="aw-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Score Current Week</h3>'+
+     '<button class="btn btn-primary" id="asc-btn">Score Week '+STATE.currentWeek+'</button><p class="form-msg" id="asc-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Bonus Games (this week)</h3>'+
+     '<p style="font-size:.8rem;color:var(--muted);margin:-4px 0 12px">Add extra point value to an upcoming game — applies to whichever team the picker chooses. Only games that haven\'t kicked off are shown. Set to 0 to clear.</p>'+
+     '<div id="bonus-games-list"><p class="loading">Loading games…</p></div></div>'+
+
+   '<div class="admin-form"><h3>Add Bonus Points</h3>'+
+     '<div class="form-group"><label>Grahamchise</label><select id="ab-name">'+nameOptions()+'</select></div>'+
+     '<div class="form-group"><label>Points</label><input type="number" step="0.5" id="ab-pts"></div>'+
+     '<div class="form-group"><label>Reason</label><input type="text" id="ab-reason"></div>'+
+     '<button class="btn btn-primary" id="ab-btn">Add Bonus</button><p class="form-msg" id="ab-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Add Grahamchise</h3>'+
+     '<div class="form-group"><label>Name</label><input type="text" id="ap-name"></div>'+
+     '<div class="form-group"><label>Conference</label><select id="ap-conf">'+confOptions()+'</select></div>'+
+     '<div class="form-group"><label>Division</label><select id="ap-div"></select></div>'+
+     '<div class="form-group"><label class="checkbox-label"><input type="checkbox" id="ap-rookie"> Rookie</label></div>'+
+     '<button class="btn btn-primary" id="ap-btn">Add</button><p class="form-msg" id="ap-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Move Grahamchise</h3>'+
+     '<div class="form-group"><label>Grahamchise</label><select id="am-name">'+nameOptions()+'</select></div>'+
+     '<div class="form-group"><label>Conference</label><select id="am-conf">'+confOptions()+'</select></div>'+
+     '<div class="form-group"><label>Division</label><select id="am-div"></select></div>'+
+     '<button class="btn btn-primary" id="am-btn">Move</button><p class="form-msg" id="am-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Toggle Rookie Status</h3>'+
+     '<div class="form-group"><label>Grahamchise</label><select id="ar-name">'+nameOptions()+'</select></div>'+
+     '<div class="form-group"><label class="checkbox-label"><input type="checkbox" id="ar-val"> Mark as Rookie</label></div>'+
+     '<button class="btn btn-primary" id="ar-btn">Update</button><p class="form-msg" id="ar-msg"></p></div>'+
+
+   '<div class="admin-form"><h3>Declare Alma Cup Winner</h3>'+
+     '<p style="font-size:.8rem;color:var(--muted);margin:-4px 0 12px">For the manual tiebreakers (reset-and-continue, Indian Gut). Leave winner blank to clear.</p>'+
+     '<div class="form-group"><label>Conference</label><select id="aa-conf">'+confOptions()+'</select></div>'+
+     '<div class="form-group"><label>Winner</label><select id="aa-name"><option value="">— clear —</option>'+nameOptions()+'</select></div>'+
+     '<button class="btn btn-primary" id="aa-btn">Set Alma Winner</button><p class="form-msg" id="aa-msg"></p></div>';
+
+  syncDiv('ap-conf','ap-div'); syncDiv('am-conf','am-div');
+  document.getElementById('ap-conf').addEventListener('change',function(){ syncDiv('ap-conf','ap-div'); });
+  document.getElementById('am-conf').addEventListener('change',function(){ syncDiv('am-conf','am-div'); });
+
+  document.getElementById('aw-btn').addEventListener('click',adminSetWeek);
+  document.getElementById('asc-btn').addEventListener('click',adminScoreWeek);
+  document.getElementById('ab-btn').addEventListener('click',adminAddBonus);
+  document.getElementById('ap-btn').addEventListener('click',adminAddPlayer);
+  document.getElementById('am-btn').addEventListener('click',adminMovePlayer);
+  document.getElementById('ar-btn').addEventListener('click',adminToggleRookie);
+  document.getElementById('aa-btn').addEventListener('click',adminSetAlmaWinner);
+  document.getElementById('awauto-btn').addEventListener('click',adminToggleAutoWeek);
+  loadBonusGames();
+}
+function adminToggleAutoWeek(){
+  var on=document.getElementById('aw-auto').checked;
+  google.script.run.withSuccessHandler(function(r){ msg('awauto-msg',r.message,!r.success); if(r.success) STATE.autoWeek=on; })
+    .withFailureHandler(function(e){ msg('awauto-msg',e.message||e,true); }).adminSetAutoWeek(ADMIN_TOKEN,on);
+}
+
+function loadBonusGames(){
+  var box=document.getElementById('bonus-games-list');
+  if(!box) return;
+  google.script.run.withSuccessHandler(function(d){
+    if(d && d.error){ box.innerHTML='<p class="error-msg">'+esc(d.error)+'</p>'; return; }
+    STATE.bonusEditor=d; if(!STATE.bonusScope) STATE.bonusScope='LEAGUE';
+    renderBonusEditor();
+  }).withFailureHandler(function(e){ box.innerHTML='<p class="error-msg">Could not load: '+(e.message||e)+'</p>'; })
+    .adminGetBonusEditor(ADMIN_TOKEN);
+}
+function renderBonusEditor(){
+  var d=STATE.bonusEditor, box=document.getElementById('bonus-games-list');
+  if(!d) return;
+  var h='<div class="pills scope-pills">';
+  d.scopes.forEach(function(s){
+    var label = s==='LEAGUE' ? 'League' : s.replace(' Chapter','');
+    h+='<button class="pill'+(s===STATE.bonusScope?' active':'')+'" data-scope="'+esc(s)+'">'+esc(label)+'</button>';
+  });
+  h+='</div>';
+  if(!d.games.length){ h+='<p class="empty">No upcoming games to set a bonus on.</p>'; box.innerHTML=h; bindAll(box,'.scope-pills .pill',bonusScopePill); return; }
+  var scopeMap = STATE.bonusScope==='LEAGUE' ? (d.league||{}) : ((d.conf&&d.conf[STATE.bonusScope])||{});
+  d.games.forEach(function(g){
+    h+='<div class="bonus-game"><div class="bonus-match">'+esc(g.awayAbbr)+' @ '+esc(g.homeAbbr)+' <span class="bonus-type">'+esc(g.gameType)+'</span></div>'+
+       teamStepperRow(g.gameId, g.awayAbbr, scopeMap[g.awayAbbr]||0)+
+       teamStepperRow(g.gameId, g.homeAbbr, scopeMap[g.homeAbbr]||0)+
+       '</div>';
+  });
+  box.innerHTML=h;
+  bindAll(box,'.scope-pills .pill',bonusScopePill);
+  bindAll(box,'.step-dn',function(el){ stepAdjust(el.dataset.game, el.dataset.team, -1); });
+  bindAll(box,'.step-up',function(el){ stepAdjust(el.dataset.game, el.dataset.team, 1); });
+  bindAll(box,'.bonus-confirm',function(el){ confirmTeamBonus(el.dataset.game, el.dataset.team); });
+}
+function bonusScopePill(el){ STATE.bonusScope=el.dataset.scope; renderBonusEditor(); }
+function teamStepperRow(gameId, team, val){
+  return '<div class="bonus-row"><span class="bonus-team">'+esc(team)+'</span>'+
+    '<div class="stepper">'+
+      '<button class="step-dn" data-game="'+esc(gameId)+'" data-team="'+esc(team)+'">−</button>'+
+      '<span class="step-val" data-game="'+esc(gameId)+'" data-team="'+esc(team)+'">'+(val||0)+'</span>'+
+      '<button class="step-up" data-game="'+esc(gameId)+'" data-team="'+esc(team)+'">+</button>'+
+    '</div>'+
+    '<button class="btn btn-primary bonus-confirm" data-game="'+esc(gameId)+'" data-team="'+esc(team)+'">Confirm</button></div>';
+}
+function stepEl(gameId, team){ return document.querySelector('.step-val[data-game="'+gameId+'"][data-team="'+team+'"]'); }
+function stepAdjust(gameId, team, delta){ var el=stepEl(gameId, team); if(el) el.textContent=Math.max(0,(Number(el.textContent)||0)+delta); }
+function confirmTeamBonus(gameId, team){
+  var el=stepEl(gameId, team); if(!el) return;
+  var bonus=Number(el.textContent)||0, scope=STATE.bonusScope;
+  google.script.run.withSuccessHandler(function(r){
+    showToast(r.message);
+    if(r.success){
+      if(scope==='LEAGUE'){ STATE.bonusEditor.league[team]=bonus; }
+      else { (STATE.bonusEditor.conf[scope]=STATE.bonusEditor.conf[scope]||{})[team]=bonus; }
+      STATE.pickData=null;
+    } else alert(r.message);
+  }).withFailureHandler(function(e){ alert('Error: '+(e.message||e)); })
+    .adminSetTeamBonus(ADMIN_TOKEN, scope, gameId, team, bonus);
+}
+function syncDiv(confId,divId){
+  var conf=document.getElementById(confId).value;
+  document.getElementById(divId).innerHTML=divisionsOf(conf).map(function(d){return '<option value="'+esc(d)+'">'+esc(d)+'</option>';}).join('');
+}
+function msg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='form-msg'+(err?' err':''); }
+
+function adminSetWeek(){
+  var w=parseInt(document.getElementById('aw').value,10);
+  if(!w||w<1||w>18){ msg('aw-msg','Enter 1–18.',true); return; }
+  google.script.run.withSuccessHandler(function(r){
+    if(r.success){ STATE.currentWeek=w; document.getElementById('week-badge').textContent='WEEK '+w; msg('aw-msg','Week set to '+w+'.'); }
+    else msg('aw-msg',r.message,true);
+  }).withFailureHandler(function(e){ msg('aw-msg',e.message||e,true); }).setCurrentWeek(ADMIN_TOKEN,w);
+}
+function adminScoreWeek(){
+  google.script.run.withSuccessHandler(function(r){ STATE.standings=null; msg('asc-msg','Week '+STATE.currentWeek+' scored.'); })
+    .withFailureHandler(function(e){ msg('asc-msg',e.message||e,true); }).triggerWeekScoring(ADMIN_TOKEN,STATE.currentWeek,STATE.season);
+}
+function adminAddBonus(){
+  var n=document.getElementById('ab-name').value, p=parseFloat(document.getElementById('ab-pts').value), r=document.getElementById('ab-reason').value.trim();
+  if(!n||isNaN(p)||!r){ msg('ab-msg','Fill in all fields.',true); return; }
+  google.script.run.withSuccessHandler(function(res){ msg('ab-msg',res.success?('Bonus added for '+n+'.'):res.message,!res.success); if(res.success){document.getElementById('ab-pts').value='';document.getElementById('ab-reason').value='';STATE.standings=null;} })
+    .withFailureHandler(function(e){ msg('ab-msg',e.message||e,true); }).addBonusPoints(ADMIN_TOKEN,STATE.season,STATE.currentWeek,n,p,r);
+}
+function adminAddPlayer(){
+  var n=document.getElementById('ap-name').value.trim(), cf=document.getElementById('ap-conf').value, dv=document.getElementById('ap-div').value, rk=document.getElementById('ap-rookie').checked;
+  if(!n){ msg('ap-msg','Enter a name.',true); return; }
+  google.script.run.withSuccessHandler(function(res){
+    if(res.success){ STATE.players.push({name:n,conference:cf,division:dv,isRookie:rk}); STATE.players.sort(function(a,b){return a.name.localeCompare(b.name);}); STATE.playerNames=STATE.players.map(function(p){return p.name;}); document.getElementById('ap-name').value=''; document.getElementById('ap-rookie').checked=false; STATE.standings=null; msg('ap-msg',n+' added.'); }
+    else msg('ap-msg',res.message,true);
+  }).withFailureHandler(function(e){ msg('ap-msg',e.message||e,true); }).adminAddPlayerFull(ADMIN_TOKEN,n,cf,dv,rk);
+}
+function adminMovePlayer(){
+  var n=document.getElementById('am-name').value, cf=document.getElementById('am-conf').value, dv=document.getElementById('am-div').value;
+  google.script.run.withSuccessHandler(function(res){
+    if(res.success){ STATE.players.forEach(function(p){ if(p.name===n){p.conference=cf;p.division=dv;} }); STATE.standings=null; msg('am-msg',res.message); }
+    else msg('am-msg',res.message,true);
+  }).withFailureHandler(function(e){ msg('am-msg',e.message||e,true); }).adminMovePlayer(ADMIN_TOKEN,n,cf,dv);
+}
+function adminToggleRookie(){
+  var n=document.getElementById('ar-name').value, v=document.getElementById('ar-val').checked;
+  google.script.run.withSuccessHandler(function(res){
+    if(res.success){ STATE.players.forEach(function(p){ if(p.name===n)p.isRookie=v; }); STATE.standings=null; msg('ar-msg',n+' updated.'); }
+    else msg('ar-msg',res.message,true);
+  }).withFailureHandler(function(e){ msg('ar-msg',e.message||e,true); }).adminToggleRookie(ADMIN_TOKEN,n,v);
+}
+function adminSetAlmaWinner(){
+  var cf=document.getElementById('aa-conf').value, n=document.getElementById('aa-name').value;
+  google.script.run.withSuccessHandler(function(res){
+    msg('aa-msg',res.message,!res.success); if(res.success) STATE.alma=null;
+  }).withFailureHandler(function(e){ msg('aa-msg',e.message||e,true); }).setAlmaWinner(ADMIN_TOKEN,cf,n);
+}
+</script>
