@@ -106,10 +106,11 @@ function doPost(e) {
  */
 function apiFunctions_() {
   return {
-    getLeagueData:       getLeagueData,
-    getConferencePicks:  getConferencePicks,
-    getPickPageData:     getPickPageData,
-    submitPick:          submitPick,
+    getLeagueData:        getLeagueData,
+    getConferencePickData: getConferencePickData,
+    getConferencePicks:   getConferencePicks,
+    getPickPageData:      getPickPageData,
+    submitPick:           submitPick,
     getStandings:        getStandings,
     getAlmaCup:          getAlmaCup,
     adminLogin:          adminLogin,
