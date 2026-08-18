@@ -143,6 +143,63 @@ function clearPicksForSeason(season) {
 }
 
 /**
+ * Removes all bonus rows for a season from both bonus sheets (zeroes bonus points).
+ * GameTeamBonuses: Season in col 0. BonusPoints: Season in col 1.
+ * @param {number} season
+ */
+function clearBonusesForSeason(season) {
+  [['GameTeamBonuses', 0], ['BonusPoints', 1]].forEach(function(pair) {
+    var sheet = getLeagueSheet().getSheetByName(pair[0]);
+    if (!sheet) return;
+    var col  = pair[1];
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return;
+    var keep = [data[0]];
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][col] != season) keep.push(data[i]);
+    }
+    sheet.clearContents();
+    sheet.getRange(1, 1, keep.length, data[0].length).setValues(keep);
+  });
+}
+
+/**
+ * Live-test route (?action=livetest): flips the app to LIVE auto mode against the
+ * real current NFL slate and zeroes all points (clears picks + bonuses for the
+ * detected season). Use this to test auto week-advance and the picks-open/unlock
+ * window end-to-end. Shared Config affects BOTH deployments.
+ */
+function runLiveTestRoute() {
+  var log = [];
+  try {
+    if (getPlayerNames().length === 0) { seedSampleLeague(); log.push('✅ Sample league seeded'); }
+
+    setConfig('AutoWeek', 'TRUE');
+    log.push('✅ Automatic Week ON');
+
+    var c      = espnCurrent();
+    var season = c ? c.season : (Number(getConfig('Season')) || 2026);
+    setConfig('Season', season);     // fallback only; auto mode reads ESPN live
+
+    clearPicksForSeason(season);
+    clearBonusesForSeason(season);
+    log.push('✅ Zeroed all points — picks & bonuses cleared for ' + season);
+
+    var typeName = c ? (c.seasonType === 1 ? 'Preseason' : (c.seasonType === 3 ? 'Postseason' : 'Regular Season')) : '?';
+    var detected = c ? (typeName + ', Week ' + c.week + ' (' + c.season + ')') : 'ESPN unavailable — check later';
+    log.push('📡 ESPN reports current: <strong>' + detected + '</strong>');
+    log.push('The app now follows ESPN automatically — when the NFL rolls to the next week, it appears here and picks unlock ~24h after the prior week\'s last game.');
+
+    var html = '<h2 style="font-family:sans-serif;color:#14265C">Live test armed</h2>' +
+      '<ul style="font-family:sans-serif;line-height:1.5">' + log.map(function(l){return '<li>'+l+'</li>';}).join('') + '</ul>' +
+      '<p style="font-family:sans-serif">Open the app — you should see the live slate above with points at zero.</p>';
+    return HtmlService.createHtmlOutput(html);
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif;color:#C8202F">Live test error</h2><p style="font-family:sans-serif">' + err.message + '</p>');
+  }
+}
+
+/**
  * Wipes players + picks, re-seeds the sample league, and seeds random picks for
  * weeks 1-6 so standings have data. Triggered via ?action=reseed.
  */
@@ -179,9 +236,9 @@ function runReseedRoute() {
 }
 
 /**
- * Demo route (?action=demo): sets the app to mid-season 2025 (Week 6 open),
- * turns on PreviewMode so Week 6 games render as pickable, and seeds standings
- * data for Weeks 1–5. Lets you tour the full UI with real ESPN logos/odds.
+ * Demo route (?action=demo): sets the app to mid-season 2025 (manual Week 6) and
+ * seeds standings data for Weeks 1–5. Uses real ESPN data (Week 6 2025 games are
+ * final/locked). Lets you tour the standings/UI with populated data.
  */
 function runDemoRoute() {
   var log = [];
@@ -189,8 +246,8 @@ function runDemoRoute() {
     if (getPlayerNames().length === 0) { seedSampleLeague(); log.push('✅ Sample league seeded'); }
     setConfig('Season', 2025);
     setConfig('CurrentWeek', 6);
-    setConfig('PreviewMode', 'TRUE');
-    log.push('✅ Season 2025, Week 6 open, PreviewMode ON');
+    setConfig('AutoWeek', 'FALSE');   // demo pins Week 6 — never live-detect
+    log.push('✅ Season 2025, Week 6, AutoWeek OFF');
 
     clearPicksForSeason(2025);
     seedRandomPicks(5);            // Weeks 1–5 completed; Week 6 left open to pick

@@ -47,6 +47,12 @@ window.addEventListener('load', function(){
   document.getElementById('header-shield').innerHTML = logoMarkup;
   document.getElementById('hero-shield').innerHTML   = logoMarkup;
 
+  // Custom menu-icon images (fall back to emoji if data missing)
+  if (typeof GFFL_TIGER!=='undefined' && GFFL_TIGER)
+    document.getElementById('icon-picks').innerHTML = '<img class="menu-icon-img contain" src="'+GFFL_TIGER+'" alt="">';
+  if (typeof GFFL_ALMA!=='undefined' && GFFL_ALMA)
+    document.getElementById('icon-alma').innerHTML  = '<img class="menu-icon-img rect" src="'+GFFL_ALMA+'" alt="">';
+
   applyTextSize(localStorage.getItem('gffl_textsize')||'small');
   document.querySelectorAll('.tt-btn').forEach(function(b){ b.addEventListener('click',function(){ applyTextSize(b.dataset.size); }); });
 
@@ -69,11 +75,12 @@ function onLoaded(data){
   STATE.conferenceNames=data.conferenceNames||[];
   STATE.leagueStructure=data.leagueStructure||[];
   STATE.currentWeek=data.currentWeek;
+  STATE.weekLabel=data.weekLabel||('Week '+data.currentWeek);
   STATE.season=data.season;
   STATE.autoWeek=!!data.autoWeek;
   STATE.leaderConf=STATE.conferenceNames[0]||null;
 
-  document.getElementById('week-badge').textContent='WEEK '+data.currentWeek;
+  document.getElementById('week-badge').textContent=STATE.weekLabel.toUpperCase();
   document.getElementById('hero-season').textContent=data.season+' Season';
   document.getElementById('loading').classList.add('hidden');
   goHome();
@@ -166,7 +173,7 @@ function screenPickGames(){
   var conf=STATE.pickConf;
   var cd=STATE.confData[conf];
   if(cd){ renderPickGames(pickDataFor(cd, STATE.pickName)); return; }   // instant from cache
-  c.innerHTML='<p class="loading">Loading Week '+STATE.currentWeek+' games…</p>';
+  c.innerHTML='<p class="loading">Loading '+(STATE.weekLabel||('Week '+STATE.currentWeek))+' games…</p>';
   loadConfData(conf, function(){
     var cd2=STATE.confData[conf];
     if(cd2) renderPickGames(pickDataFor(cd2, STATE.pickName));
@@ -351,7 +358,7 @@ function screenEveryone(){
 function renderEveryone(rows){
   var c=document.getElementById('everyone-content');
   var conf=STATE.pickConf||STATE.leaderConf;
-  var h='<p class="section-title">'+esc(conf)+' — Week '+STATE.currentWeek+' Picks</p>';
+  var h='<p class="section-title">'+esc(conf)+' — '+esc(STATE.weekLabel||('Week '+STATE.currentWeek))+' Picks</p>';
   h+='<p class="ep-hint">Tap anyone whose pick isn\'t locked to make or change their pick.</p>';
   divisionsOf(conf).forEach(function(div){
     var people=rows.filter(function(r){return r.division===div;});
@@ -390,10 +397,10 @@ function renderLeaderboard(){
   if(!STATE.leaderConf) STATE.leaderConf=STATE.conferenceNames[0];
   var h='<p class="section-title">Leaderboard · '+data.season+' — Through Week '+Math.max(0,data.currentWeek-1)+'</p>';
 
-  // conference pills
-  h+='<div class="pills">';
+  // conference pills — 2×2 grid, "Chapter" dropped from labels
+  h+='<div class="pills grid2">';
   STATE.conferenceNames.forEach(function(conf){
-    h+='<button class="pill'+(conf===STATE.leaderConf?' active':'')+'" data-conf="'+esc(conf)+'">'+esc(conf)+'</button>';
+    h+='<button class="pill'+(conf===STATE.leaderConf?' active':'')+'" data-conf="'+esc(conf)+'">'+esc(conf.replace(' Chapter',''))+'</button>';
   });
   h+='</div>';
 
@@ -466,8 +473,8 @@ function renderAlma(){
   var data=STATE.alma, c=document.getElementById('alma-content');
   if(!STATE.almaConf) STATE.almaConf=STATE.conferenceNames[0];
   var h='<p class="section-title">Alma Cup · Longest Survival Streak · Through Week '+data.lastWeek+'</p>';
-  h+='<div class="pills">';
-  STATE.conferenceNames.forEach(function(cf){ h+='<button class="pill'+(cf===STATE.almaConf?' active':'')+'" data-conf="'+esc(cf)+'">'+esc(cf)+'</button>'; });
+  h+='<div class="pills grid2">';
+  STATE.conferenceNames.forEach(function(cf){ h+='<button class="pill'+(cf===STATE.almaConf?' active':'')+'" data-conf="'+esc(cf)+'">'+esc(cf.replace(' Chapter',''))+'</button>'; });
   h+='</div>';
 
   var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.almaConf;})[0];

@@ -10,9 +10,6 @@
 // Its events live under content.sbData.events.
 var ESPN_BASE = 'https://cdn.espn.com/core/nfl/scoreboard';
 
-// Fake kickoff labels used only in PreviewMode to simulate upcoming games.
-var PREVIEW_TIMES = ['Sun 1:00 PM', 'Sun 4:05 PM', 'Sun 4:25 PM', 'Sun 8:20 PM', 'Mon 8:15 PM', 'Thu 8:15 PM'];
-
 // ─── Active week/season (auto-detected from ESPN, or manual) ──────────────────
 
 var _espnCurrent;   // memoized per execution
@@ -32,7 +29,12 @@ function espnCurrent() {
       var wk = sb.week && sb.week.number;
       var sn = (sb.season && sb.season.year) ||
                (sb.leagues && sb.leagues[0] && sb.leagues[0].season && sb.leagues[0].season.year);
-      if (wk && sn) _espnCurrent = { week: Number(wk), season: Number(sn) };
+      // Season type: 1 = preseason, 2 = regular, 3 = postseason. Needed so auto
+      // mode fetches the correct slate (preseason games live under seasontype=1).
+      var st = (sb.season && sb.season.type) ||
+               (sb.leagues && sb.leagues[0] && sb.leagues[0].season && sb.leagues[0].season.type &&
+                 (sb.leagues[0].season.type.type || sb.leagues[0].season.type));
+      if (wk && sn) _espnCurrent = { week: Number(wk), season: Number(sn), seasonType: Number(st) || 2 };
     }
   } catch (e) { Logger.log('espnCurrent error: ' + e.message); }
   return _espnCurrent;
@@ -47,10 +49,57 @@ function getActiveSeason() {
   return Number(getConfig('Season')) || 2025;
 }
 
+var _liveWeek;   // memoized resolved auto week for this execution
+
+/**
+ * ESPN's "current week" pointer lags — it keeps pointing at a slate for a day or
+ * two after those games finish. So in auto mode, if every game in ESPN's current
+ * week is already final, roll forward to the next week that still has games to
+ * play. This is the "next week becomes visible once the prior week ends" behavior.
+ */
+function resolveAutoWeek_(c) {
+  if (_liveWeek !== undefined) return _liveWeek;
+  var wk = c.week;
+  try {
+    for (var hops = 0; hops < 4; hops++) {
+      var games = getWeeklyMatchups(wk, c.season, null, c.seasonType);
+      if (!games.length) break;                                   // no data — stop
+      if (!games.every(function(g) { return g.status === 'post'; })) break; // still games to play
+      var next = getWeeklyMatchups(wk + 1, c.season, null, c.seasonType);
+      if (!next.length) break;                                    // no next week in this season type
+      wk += 1;
+    }
+  } catch (e) { Logger.log('resolveAutoWeek_ error: ' + e.message); }
+  _liveWeek = wk;
+  return _liveWeek;
+}
+
 /** The week the app should use right now. */
 function getActiveWeek() {
-  if (isAutoWeek()) { var c = espnCurrent(); if (c) return c.week; }
+  if (isAutoWeek()) { var c = espnCurrent(); if (c) return resolveAutoWeek_(c); }
   return Number(getConfig('CurrentWeek')) || 1;
+}
+
+/** The NFL season type the app should use right now (1=pre, 2=regular, 3=post). */
+function getActiveSeasonType() {
+  if (isAutoWeek()) { var c = espnCurrent(); if (c && c.seasonType) return c.seasonType; }
+  return Number(getConfig('SeasonType')) || 2;
+}
+
+/**
+ * Human display label for a week. ESPN indexes preseason with the Hall of Fame
+ * game as week 1, so its "week N" is the official "Preseason Week N-1". Regular
+ * season is shown as-is.
+ * @param {number} week        ESPN week index
+ * @param {number} seasonType  1=pre, 2=regular, 3=post
+ */
+function weekLabel(week, seasonType) {
+  if (seasonType === 1) {
+    if (week <= 1) return 'Hall of Fame';
+    return 'Preseason Wk ' + (week - 1);
+  }
+  if (seasonType === 3) return 'Playoffs Wk ' + week;
+  return 'Week ' + week;
 }
 
 /**
@@ -70,7 +119,8 @@ function getActiveWeek() {
  * (used by scoring so winners are never stale).
  */
 function getWeeklyMatchups(week, season, conference, seasonType, noCache) {
-  var cacheKey = 'basegames_' + season + '_' + week;
+  seasonType = seasonType || getActiveSeasonType();   // follow live pre/regular/post season
+  var cacheKey = 'basegames_' + season + '_' + seasonType + '_' + week;
   var cache    = CacheService.getScriptCache();
   var base = null;
   if (!noCache) {
@@ -93,9 +143,8 @@ function getWeeklyMatchups(week, season, conference, seasonType, noCache) {
   return refreshLocks(base);
 }
 
-/** Recompute `locked` from real kickoff time (live mode); preview keeps its simulated status. */
+/** Recompute `locked` from real kickoff time. */
 function refreshLocks(games) {
-  if (String(getConfig('PreviewMode') || '').toUpperCase() === 'TRUE') return games;
   var now = Date.now();
   games.forEach(function(g) { var k = Date.parse(g.kickoff); if (k) g.locked = now >= k; });
   return games;
@@ -105,10 +154,6 @@ function refreshLocks(games) {
 function fetchBaseGamesRaw(week, season, seasonType) {
   seasonType = seasonType || 2;
   var url = ESPN_BASE + '?xhr=1&seasontype=' + seasonType + '&week=' + week + '&year=' + season;
-
-  // Preview mode (Config PreviewMode = TRUE) unlocks past games so the pick UI
-  // is fully visible when demoing with historical weeks.
-  var preview = String(getConfig('PreviewMode') || '').toUpperCase() === 'TRUE';
 
   try {
     // ESPN blocks requests from Google's servers without a browser User-Agent
@@ -139,18 +184,11 @@ function fetchBaseGamesRaw(week, season, seasonType) {
       var awayWins = extractWins(away ? away.records : []);
       var scoring  = classifyGame(week, homeWins, awayWins);
 
-      // Real status, with an optional PreviewMode override that simulates a
-      // realistic mid-week (mix of upcoming / live / final) for demoing.
+      // Real ESPN status.
       var statusState  = game.status.type.state;          // 'pre' | 'in' | 'post'
       var statusDetail = game.status.type.description;
       var statusShort  = game.status.type.shortDetail || '';   // e.g. "Q3 5:20", "Final"
       var isCompleted  = game.status.type.completed;
-      if (preview) {
-        var m = idx % 5;
-        if (m < 3)       { statusState = 'pre';  statusDetail = PREVIEW_TIMES[idx % PREVIEW_TIMES.length]; statusShort = statusDetail; isCompleted = false; }
-        else if (m === 3){ statusState = 'in';   statusDetail = 'LIVE';  statusShort = '2nd Qtr'; isCompleted = false; }
-        else             { statusState = 'post'; statusDetail = 'Final'; statusShort = 'Final';   isCompleted = true; }
-      }
 
       var winner = null;
       if (statusState === 'post' && game.status.type.completed) {
@@ -176,9 +214,6 @@ function fetchBaseGamesRaw(week, season, seasonType) {
       var awayAbbr  = away ? away.team.abbreviation : '';
       var homeBonus = 0;   // bonuses are layered on later by getWeeklyMatchups (per conference)
       var awayBonus = 0;
-
-      // Demo only: completed games have no ESPN odds, so synthesize plausible ones.
-      if (preview && !odds) odds = makeFakeOdds(game.id, homeAbbr, awayAbbr, homeWins, awayWins);
 
       return {
         gameId:      game.id,
@@ -221,22 +256,6 @@ function fetchBaseGamesRaw(week, season, seasonType) {
     Logger.log('ESPN fetch error (week ' + week + ', ' + season + '): ' + e.message);
     return [];
   }
-}
-
-/**
- * Demo helper — deterministically fabricates a plausible betting line for a game
- * that has no real ESPN odds (used only in PreviewMode). Favors the better record.
- * @returns {{ details, overUnder, provider }}
- */
-function makeFakeOdds(gameId, homeAbbr, awayAbbr, homeWins, awayWins) {
-  var h = 0, s = String(gameId);
-  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
-  var winDiff = homeWins - awayWins;
-  var fav = winDiff >= 0 ? homeAbbr : awayAbbr;
-  var mag = 1.5 + Math.abs(winDiff) * 2 + (h % 3);   // .5-ending spread, ~1.5–13.5
-  if (mag > 13.5) mag = 13.5;
-  var ou = 39.5 + (h % 14);                          // ~39.5–52.5
-  return { details: fav + ' -' + mag, overUnder: ou, provider: 'Demo Line' };
 }
 
 /**

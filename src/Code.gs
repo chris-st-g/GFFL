@@ -22,6 +22,10 @@ function doGet(e) {
     return runDemoRoute();
   }
 
+  if (action === 'livetest') {
+    return runLiveTestRoute();
+  }
+
   // Diagnostic: try several ESPN hosts/headers from Apps Script to find one
   // that isn't IP-blocked.
   if (action === 'espn') {
@@ -52,7 +56,7 @@ function doGet(e) {
     var wk = Number(getConfig('CurrentWeek')), sn = Number(getConfig('Season'));
     var g = getWeeklyMatchups(wk, sn);
     return ContentService.createTextOutput(JSON.stringify({
-      week: wk, season: sn, preview: String(getConfig('PreviewMode')),
+      week: wk, season: sn,
       count: g.length,
       sample: g.slice(0, 2),
       lockedFlags: g.map(function(x){ return x.locked; })
@@ -152,6 +156,7 @@ function getLeagueData() {
     conferenceNames: getConferenceNames(),
     leagueStructure: LEAGUE_STRUCTURE,
     currentWeek:     currentWeek,
+    weekLabel:       weekLabel(currentWeek, getActiveSeasonType()),
     season:          season,
     autoWeek:        isAutoWeek()
   };

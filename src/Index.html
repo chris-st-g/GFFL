@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>GFFL</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 118'%3E%3Cpath d='M12 15 Q31 8 50 4 Q69 8 88 15 L88 46 Q88 88 50 115 Q12 88 12 46 Z' fill='%2314265C'/%3E%3Crect x='19' y='60' width='62' height='26' fill='white'/%3E%3Ctext x='50' y='80' font-family='Arial Black,Arial' font-size='19' font-weight='900' fill='%23C8202F' text-anchor='middle'%3EGFFL%3C/text%3E%3C/svg%3E">
+  <?!= include('AppleIcon') ?>
   <?!= include('Styles') ?>
 </head>
 <body>
@@ -33,7 +34,7 @@
       </div>
 
       <div class="menu-card" onclick="startPicks()">
-        <div class="menu-icon">🏈</div>
+        <div class="menu-icon" id="icon-picks">🏈</div>
         <div class="menu-body"><h3>Make Your Picks</h3><p>Submit or change this week's picks</p></div>
         <div class="menu-chev">&#8250;</div>
       </div>
@@ -43,7 +44,7 @@
         <div class="menu-chev">&#8250;</div>
       </div>
       <div class="menu-card" onclick="openAlma()">
-        <div class="menu-icon">🔥</div>
+        <div class="menu-icon" id="icon-alma">🔥</div>
         <div class="menu-body"><h3>Alma Cup</h3><p>Longest survival streak — last one standing</p></div>
         <div class="menu-chev">&#8250;</div>
       </div>
@@ -90,6 +91,8 @@
   <div class="toast" id="toast"></div>
 
   <?!= include('LogoData') ?>
+  <?!= include('AlmaData') ?>
+  <?!= include('TigerData') ?>
   <?!= include('Scripts') ?>
 </body>
 </html>

@@ -141,17 +141,34 @@ All source files live under `src/` — clasp is configured to push from that dir
 
 ## Deployment Process
 
-**After any code change, both steps are required:**
+**Claude creates and publishes all deployments via clasp — no manual editor steps.**
 
-1. Push to Apps Script:
+Path prefix for all clasp commands:
+```
+export PATH="/c/Program Files/nodejs:/c/Users/chris/AppData/Roaming/npm:$PATH"
+```
+
+**After any code change:**
+
+1. Push code to Apps Script HEAD:
    ```
-   export PATH="/c/Program Files/nodejs:/c/Users/chris/AppData/Roaming/npm:$PATH" && clasp push --force
+   clasp push --force
    ```
 
-2. Create a new deployment version (required for changes to go live):
-   - Open the Apps Script editor
-   - Deploy → Manage deployments → click the pencil icon → New version → Deploy
-   - The same URL is preserved — **never create a new deployment, only new versions**
+2. Publish a new version to a deployment (this is what makes the change live for that URL).
+   `clasp deploy --deploymentId <ID>` re-publishes an **existing** deployment as a new
+   version at the **same URL** — always pass `--deploymentId`, never create a new deployment.
+   - **PREVIEW** (default target for all new work — deploy here without asking):
+     ```
+     clasp deploy --deploymentId AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt --description "<what changed>"
+     ```
+   - **LIVE / testers** — only after the user explicitly approves promoting preview → live:
+     ```
+     clasp deploy --deploymentId AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I --description "<what changed>"
+     ```
+
+`clasp push` alone only updates HEAD — versioned deployments stay pinned until re-deployed
+with `clasp deploy`. Note the output line `Deployed <id> @N` — N is the new version number.
 
 **Live app URL:**
 `https://script.google.com/macros/s/AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I/exec`
@@ -183,9 +200,11 @@ All source files live under `src/` — clasp is configured to push from that dir
 *Last updated: 2026-08-17*
 
 ### Deployment strategy — TWO deployments (important)
-- **LIVE / testers** — deploymentId `AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I` — currently **@43, FROZEN** while the user gathers tester feedback. Do NOT `clasp deploy` this without the user's OK.
-- **PREVIEW / user** — deploymentId `AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt` — currently **@49**, gets all new work for review. `clasp push` updates HEAD only; versioned deployments stay pinned until re-deployed. Both share the same Sheet + Config.
-- When user approves, promote preview → live by `clasp deploy --deploymentId <LIVE> ...`.
+- Claude publishes deployments with `clasp deploy --deploymentId <ID>` (see **Deployment Process** above). Deploy to PREVIEW freely; deploy to LIVE only with the user's explicit OK.
+- **LIVE / testers** — deploymentId `AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I` — **@64** (freeze lifted 2026-08-17 for the shared live test). Still gate LIVE deploys on the user's OK.
+- **PREVIEW / user** — deploymentId `AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt` — **@63**, gets all new work for review. `clasp push` updates HEAD only; versioned deployments stay pinned until re-deployed. Both share the same Sheet + Config.
+- **NO FAKE DATA (2026-08-17):** PreviewMode/Demo mode was fully removed — the app **always** shows real ESPN data (no simulated scores/times/odds, no toggle). `PreviewMode` Config is now inert (unread). `makeFakeOdds`, `PREVIEW_TIMES`, `adminSetPreviewMode`, and the Demo Mode admin card are gone.
+- **LIVE TEST armed 2026-08-17:** `?action=livetest` route sets AutoWeek ON + zeroes points (clears picks+bonuses for the ESPN-detected season). App follows the real NFL slate — currently **2026 Preseason**. Season-type support: `espnCurrent()` captures `seasonType`, `getActiveSeasonType()` (1=pre/2=reg/3=post), `getWeeklyMatchups` defaults to it + includes it in the cache key. `resolveAutoWeek_()` rolls past a fully-final week to the next upcoming slate (ESPN's pointer lags). `weekLabel()` shows preseason as official numbering (ESPN wk N = "Preseason Wk N-1"; wk1 = "Hall of Fame"). End the test: turn Auto OFF in Admin.
 
 ### Built
 - **Conferences (called "Chapters"):** Mt. Washington, Louisville, St. Gertrude, St. George. `LEAGUE_STRUCTURE` in `Sheets.gs`. Divisions still placeholder surnames; sample roster is throwaway.
@@ -195,12 +214,15 @@ All source files live under `src/` — clasp is configured to push from that dir
 - **Alma Cup** (`Alma.gs`, 🔥 card): survival streak, per-conf resolution, `setAlmaWinner()` override.
 - **Performance:** base-games CacheService (120s, one ESPN fetch/week for all conferences), background prefetch on open, client-side conference cache (`STATE.confData`), `LockService` on pick writes.
 - **Logo:** real GFFL shield embedded as data-URI (`src/LogoData.html`, source `src/assets/gffl-logo.png`). Small/Large text toggle on home.
+- **Home menu icons:** photo icons embedded as data-URIs — `src/TigerData.html` (`GFFL_TIGER`, Bengal tiger → "Make Your Picks") and `src/AlmaData.html` (`GFFL_ALMA`, Alma's photo → "Alma Cup", rounded-rect `.rect` so hair isn't cropped). Included in `Index.html`, applied in `Scripts.html` load handler, styled `.menu-icon-img`. Emoji fallbacks remain if the vars are absent.
+- **Maverick (Gemini commissioner assistant): REMOVED from preview 2026-08-17** — free-tier Gemini timed out under load after ~2 requests. Code (`Gemini.gs`, `MaverickData.html`, admin card + `commissionerPlan`/`commissionerApply`, Hornet avatar `GFFL_MAVERICK`) was fully reverted; recoverable from git history if revisited with a paid key.
 - **ESPN:** MUST use `cdn.espn.com/core` (site.api 403s from GAS). Live scores/status/winner already in the cached data — no extra calls.
 
 ### Go-live features (BUILT but gated off — only active when auto-week is ON)
-- **Automatic Week** (Admin toggle) → reads live NFL week/season from ESPN (`getActiveWeek/Season`).
+- **Automatic Week** (Admin toggle) → reads live NFL week/season/type from ESPN (`getActiveWeek/Season/SeasonType`), rolls past a fully-final week (`resolveAutoWeek_`).
 - **Picks-open window** (`getPicksOpenInfo`): next week visible-but-locked immediately after the prior week's last game; picks open **24h after that final game**; locks on real kickoffs; times in viewer TZ (default ET).
-- **Demo mode:** Config `PreviewMode=TRUE`, 2025 Wk 6, fake statuses + fake odds so the pick UI is demoable.
+- **Demo mode: REMOVED** — app always uses real ESPN data (see NO FAKE DATA above).
+- **iOS home-screen icon:** `src/AppleIcon.html` (`<link rel="apple-touch-icon">`, GFFL shield on white, 180×180) included in `Index.html` head. NOTE: Apps Script serves inside a sandbox iframe, so iOS may still fall back to a screenshot/letter — custom home-screen icons aren't guaranteed for raw Apps Script web apps.
 
 ### Pending / next
 - Replace sample roster with **real names + division mapping** (user provides).
