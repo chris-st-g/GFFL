@@ -151,9 +151,9 @@ var REAL_ROSTERS = {
   },
   'St. George Chapter': {
     'St. George': ['O.T.', 'Shaka', 'Snow White', 'Globetrotter', 'Dip', 'Valley Girl'],
-    'Rogers':     ['CollaR', 'St. Gator', 'Sweet T', 'Relax', "Lil' Peanut", 'Irish Angel'],
+    'Rogers':     ['CollaR', 'St. Gator', 'Sweet T', 'Relax', "Lil' Peanut", 'Colonel'],
     'Graham':     ['Ti Eagle', 'Danger Boy', 'Big Red', 'Golden Hour', "Lil' Bear", 'SCStG'],
-    'Moeller':    ['Knife Hands', 'Crazy Legs', 'Chips', 'Golden Bear', 'Pope', 'Cheesecurd']
+    'Moeller':    ['Knife Hands', 'Crazy Legs', 'Chips', 'Golden Bear', 'Pope', 'GK Cheeserton']
   }
 };
 
