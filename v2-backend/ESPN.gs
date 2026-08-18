@@ -49,19 +49,48 @@ function espnCurrent() {
 /** True when the commissioner has enabled automatic week detection. */
 function isAutoWeek() { return String(getConfig('AutoWeek') || '').toUpperCase() === 'TRUE'; }
 
-/** The season the app should use right now. */
-function getActiveSeason() {
-  if (isAutoWeek()) { var c = espnCurrent(); if (c) return c.season; }
-  return Number(getConfig('Season')) || 2025;
+var _activeCtx;   // per-execution memo of the resolved active week/season/type
+var _liveWeek;    // per-execution memo for resolveAutoWeek_
+
+/**
+ * The resolved {week, season, seasonType} the app should use right now.
+ * In auto mode this may require ESPN calls (espnCurrent + resolveAutoWeek_), so
+ * the result is cached ~10 min — week resolution then runs at most once per
+ * window instead of on every request. Manual mode reads Config fresh each time.
+ */
+function activeContext() {
+  if (_activeCtx !== undefined) return _activeCtx;
+  if (!isAutoWeek()) {
+    _activeCtx = {
+      week:       Number(getConfig('CurrentWeek')) || 1,
+      season:     Number(getConfig('Season')) || 2025,
+      seasonType: Number(getConfig('SeasonType')) || 2
+    };
+    return _activeCtx;
+  }
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('active_ctx');
+  if (hit) { try { _activeCtx = JSON.parse(hit); return _activeCtx; } catch (e) {} }
+
+  var c = espnCurrent();
+  if (!c) {
+    _activeCtx = { week: Number(getConfig('CurrentWeek')) || 1, season: Number(getConfig('Season')) || 2025, seasonType: 2 };
+    return _activeCtx;
+  }
+  _activeCtx = { week: resolveAutoWeek_(c), season: c.season, seasonType: c.seasonType };
+  try { cache.put('active_ctx', JSON.stringify(_activeCtx), 600); } catch (e) {}
+  return _activeCtx;
 }
 
-var _liveWeek;   // memoized resolved auto week for this execution
+function getActiveSeason()     { return activeContext().season; }
+function getActiveWeek()       { return activeContext().week; }
+function getActiveSeasonType() { return activeContext().seasonType; }
 
 /**
  * ESPN's "current week" pointer lags — it keeps pointing at a slate for a day or
  * two after those games finish. So in auto mode, if every game in ESPN's current
  * week is already final, roll forward to the next week that still has games to
- * play. This is the "next week becomes visible once the prior week ends" behavior.
+ * play. Called once per cache window via activeContext().
  */
 function resolveAutoWeek_(c) {
   if (_liveWeek !== undefined) return _liveWeek;
@@ -78,18 +107,6 @@ function resolveAutoWeek_(c) {
   } catch (e) { Logger.log('resolveAutoWeek_ error: ' + e.message); }
   _liveWeek = wk;
   return _liveWeek;
-}
-
-/** The week the app should use right now. */
-function getActiveWeek() {
-  if (isAutoWeek()) { var c = espnCurrent(); if (c) return resolveAutoWeek_(c); }
-  return Number(getConfig('CurrentWeek')) || 1;
-}
-
-/** The NFL season type the app should use right now (1=pre, 2=regular, 3=post). */
-function getActiveSeasonType() {
-  if (isAutoWeek()) { var c = espnCurrent(); if (c && c.seasonType) return c.seasonType; }
-  return Number(getConfig('SeasonType')) || 2;
 }
 
 /**
