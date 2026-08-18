@@ -20,9 +20,9 @@
 
 var LEAGUE_STRUCTURE = [
   { conference: 'Mt. Washington Chapter', divisions: ['Wiseman', 'Moeller'] },
-  { conference: 'Louisville Chapter',     divisions: ['Halpin', 'Altenau'] },
-  { conference: 'St. Gertrude Chapter',   divisions: ['Gunning', 'Buchanan'] },
-  { conference: 'St. George Chapter',     divisions: ['Kensington', 'Thornbury'] }
+  { conference: 'Louisville Chapter',     divisions: ['IRISH Muskie-Tigers', 'Lioness', 'Mustang', 'Valkyrie'] },
+  { conference: 'St. Gertrude Chapter',   divisions: ['Navy Flyer', 'Noodles', 'Grace', 'Carl'] },
+  { conference: 'St. George Chapter',     divisions: ['St. George', 'Rogers', 'Graham', 'Moeller'] }
 ];
 
 /** Ordered list of conference names. */

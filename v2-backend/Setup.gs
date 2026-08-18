@@ -127,6 +127,92 @@ function clearPlayersSheet() {
 }
 
 /**
+ * Real chapter rosters (Nickname = display name), keyed by conference then
+ * division. Source: the family's Weekly Picks & Standings sheets. Mt. Washington
+ * is still the sample roster (not yet provided).
+ */
+var REAL_ROSTERS = {
+  // Placeholder roster until the real Mt. Washington names are provided.
+  'Mt. Washington Chapter': {
+    'Wiseman': ['MtW Alpha', 'MtW Bravo', 'MtW Charlie', 'MtW Delta', 'MtW Echo'],
+    'Moeller': ['MtW Foxtrot', 'MtW Golf', 'MtW Hotel', 'MtW India', 'MtW Juliet']
+  },
+  'Louisville Chapter': {
+    'IRISH Muskie-Tigers': ['Hank', 'Legend', 'Glide', 'Giligan', 'Coach Oeaux', 'Ellrish'],
+    'Lioness':             ['LorenaRadina', 'Teach', 'GuateMary', 'Knight Time', 'Fleaux'],
+    'Mustang':             ['Boomer', 'Preacher', 'Lone Ranger', 'Crockett', 'Hat Trick', 'NavyBaby', 'T3'],
+    'Valkyrie':            ['Pearl', 'Little Flower', 'Roux', 'Light-Time', 'Bayou Baby']
+  },
+  'St. Gertrude Chapter': {
+    'Navy Flyer': ['Fairway', 'Dusty Bottoms', 'Invinnie', 'Urban', 'Lego'],
+    'Noodles':    ['Road Rage', 'Flash', 'Otto', 'Condi', 'Bean'],
+    'Grace':      ['El Guapa', 'Dominator', 'Striker Queen', 'Anna Banana', 'Noodelette'],
+    'Carl':       ['Barracuda', 'Lou Hoo', 'Truckster', 'Carpenter']
+  },
+  'St. George Chapter': {
+    'St. George': ['O.T.', 'Shaka', 'Snow White', 'Globetrotter', 'Dip', 'Valley Girl'],
+    'Rogers':     ['CollaR', 'St. Gator', 'Sweet T', 'Relax', "Lil' Peanut", 'Irish Angel'],
+    'Graham':     ['Ti Eagle', 'Danger Boy', 'Big Red', 'Golden Hour', "Lil' Bear", 'SCStG'],
+    'Moeller':    ['Knife Hands', 'Crazy Legs', 'Chips', 'Golden Bear', 'Pope', 'Cheesecurd']
+  }
+};
+
+/**
+ * Route (?action=realroster): replaces the sample roster for the chapters in
+ * REAL_ROSTERS with the real Grahamchises (by nickname). Leaves other chapters
+ * (Mt. Washington) untouched. Also drops any picks that referenced removed names.
+ */
+function runRealRosterRoute() {
+  var log = [];
+  try {
+    var targets = Object.keys(REAL_ROSTERS);
+
+    // Set of all incoming nicknames (so sample names that collide are removed too).
+    var incoming = {};
+    targets.forEach(function(conf) {
+      var divs = REAL_ROSTERS[conf];
+      Object.keys(divs).forEach(function(div) {
+        divs[div].forEach(function(n) { incoming[n] = true; });
+      });
+    });
+
+    // 1) Remove existing players in the target chapters OR any leftover sample
+    //    player whose name collides with an incoming nickname.
+    var pl = getLeagueSheet().getSheetByName('Players');
+    var data = pl.getDataRange().getValues();
+    var header = data[0];
+    var keep = [header];
+    for (var i = 1; i < data.length; i++) {
+      var conf = String(data[i][2]), name = String(data[i][1]);   // col2=Conference, col1=Name
+      if (targets.indexOf(conf) === -1 && !incoming[name]) keep.push(data[i]);
+    }
+    pl.clearContents();
+    pl.getRange(1, 1, keep.length, header.length).setValues(keep);
+    log.push('Cleared target chapters + colliding sample names.');
+
+    // 2) Add the real rosters.
+    var added = 0, skipped = [];
+    targets.forEach(function(conf) {
+      var divs = REAL_ROSTERS[conf];
+      Object.keys(divs).forEach(function(div) {
+        divs[div].forEach(function(nick) {
+          var r = addPlayer(nick, conf, div, false);
+          if (r.success) added++; else skipped.push(nick + ' (' + r.message + ')');
+        });
+      });
+    });
+    log.push('Added ' + added + ' grahamchises.');
+    if (skipped.length) log.push('Skipped: ' + skipped.join('; '));
+
+    var html = '<h2 style="font-family:sans-serif;color:#14265C">Rosters updated</h2>' +
+      '<ul style="font-family:sans-serif;line-height:1.5">' + log.map(function(l){return '<li>'+l+'</li>';}).join('') + '</ul>';
+    return HtmlService.createHtmlOutput(html);
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif;color:#C8202F">Roster error</h2><p style="font-family:sans-serif">' + err.message + '</p>');
+  }
+}
+
+/**
  * Clears all picks for a given season (keeps header and other seasons).
  * @param {number} season
  */

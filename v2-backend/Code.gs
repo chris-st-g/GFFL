@@ -26,6 +26,10 @@ function doGet(e) {
     return runLiveTestRoute();
   }
 
+  if (action === 'realroster') {
+    return runRealRosterRoute();
+  }
+
   // JSON API for the GitHub Pages frontend (reads). GET ?action=api&fn=NAME&args=[...]
   if (action === 'api') {
     return apiDispatch_(e);
