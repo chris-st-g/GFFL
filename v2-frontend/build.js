@@ -55,6 +55,14 @@ html = html.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, function (_m, name) {
   return fs.readFileSync(path.join(SRC, name + '.html'), 'utf8');
 });
 
+// The app's CSS blows the root font-size up to 243.75% to compensate for the
+// Apps Script sandbox iframe shrinking its content. GitHub Pages serves the page
+// standalone (real width=device-width viewport), so that compensation makes
+// everything ~2.4x too big — reset to a normal mobile baseline. (big-text keeps
+// the original 1.75x ratio: 175% = 100% * 1.75.)
+html = html.replace('</head>',
+  '  <style>html{font-size:100%}html.big-text{font-size:175%}</style>\n</head>');
+
 // Inject the shim right after <body> so window.google exists before the app's
 // load handler (which calls google.script.run.getLeagueData) fires.
 html = html.replace('<body>', '<body>\n' + shim);
