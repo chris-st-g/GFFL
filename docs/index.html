@@ -37,9 +37,12 @@
   .header-row{max-width:640px;margin:0 auto;display:flex;align-items:center;gap:12px}
   .header-shield{width:2.75rem;height:3.25rem;flex:0 0 auto}
   .header-shield svg{width:100%;height:100%;display:block}
-  .header-titles{flex:1 1 auto;min-width:0}
-  .header-titles h1{font-size:1.15rem;font-weight:900;letter-spacing:.5px;margin:0;line-height:1.05}
-  .header-titles p{margin:1px 0 0;font-size:.68rem;opacity:.75;text-transform:uppercase;letter-spacing:1px}
+  .header-spacer{flex:1 1 auto;min-width:0}
+  .home-btn{
+    background:rgba(255,255,255,.14);border:none;color:#fff;font-size:.8rem;font-weight:700;
+    padding:6px 14px;border-radius:999px;cursor:pointer;display:none;align-items:center;flex:0 0 auto;
+  }
+  .home-btn.show{display:inline-flex}
   .week-badge{
     background:var(--red);color:#fff;font-weight:800;font-size:.72rem;letter-spacing:.5px;
     padding:5px 10px;border-radius:999px;white-space:nowrap;flex:0 0 auto;
@@ -285,10 +288,8 @@
     <div class="header-row">
       <button class="back-btn" id="back-btn" onclick="goBack()">&#8249; Back</button>
       <div class="header-shield" id="header-shield" onclick="goHome()"></div>
-      <div class="header-titles">
-        <h1 id="league-title">GFFL</h1>
-        <p id="league-sub">Graham Family Football League</p>
-      </div>
+      <button class="home-btn" id="home-btn" onclick="goHome()">Home</button>
+      <div class="header-spacer"></div>
       <div class="week-badge" id="week-badge">…</div>
     </div>
   </header>
@@ -402,6 +403,7 @@ function showView(name){
   STATE.view=name;
   document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
   var el=document.getElementById('view-'+name); if(el) el.classList.add('active');
+  document.getElementById('home-btn').classList.toggle('show', name!=='home');
   window.scrollTo(0,0);
 }
 
@@ -447,7 +449,7 @@ function onLoaded(data){
   STATE.leaderConf=STATE.conferenceNames[0]||null;
 
   document.getElementById('week-badge').textContent=STATE.weekLabel.toUpperCase();
-  document.getElementById('hero-season').textContent=data.season+' Season';
+  document.getElementById('hero-season').textContent='Season '+toRoman(Number(data.season)-1998);
   document.getElementById('loading').classList.add('hidden');
   goHome();
   prefetchPicks();   // warm the game data in the background so the pick screen is instant
@@ -481,6 +483,13 @@ function pickDataFor(cd, name){
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// Kickoff ISO -> viewer-local "Thu, Aug 20, 8:00 PM"
+function fmtKick(iso){ var d=new Date(iso); if(isNaN(d.getTime())) return 'Scheduled';
+  return d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+// Integer -> Roman numerals (GFFL season number)
+function toRoman(n){ n=Number(n)||0; if(n<=0) return String(n);
+  var m=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+  var r=''; m.forEach(function(p){ while(n>=p[0]){ r+=p[1]; n-=p[0]; } }); return r; }
 function bindAll(root,sel,fn){ root.querySelectorAll(sel).forEach(function(el){ el.addEventListener('click',function(){ fn(el); }); }); }
 function divisionsOf(conf){ var e=STATE.leagueStructure.filter(function(c){return c.conference===conf;})[0]; return e?e.divisions:[]; }
 function showToast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3200); }
@@ -679,7 +688,7 @@ function gameCard(g,existingPick){
   var live=g.status==='in', final=g.status==='post', showScore=live||final;
   var footTxt = live  ? ('🔴 LIVE' + (g.statusShort ? (' · '+esc(g.statusShort)) : ''))
               : final ? ('Final'    + (g.statusShort && g.statusShort!=='Final' ? (' · '+esc(g.statusShort)) : ''))
-              : (g.statusDetail ? esc(g.statusDetail) : '');
+              : (g.kickoff ? esc(fmtKick(g.kickoff)) : (g.statusDetail ? esc(g.statusDetail) : ''));
   var footCls='game-foot'+(live?' live':(final?' final':''));
 
   var stateClass = live ? ' game-live' : ((final||g.locked) ? ' game-final' : '');
