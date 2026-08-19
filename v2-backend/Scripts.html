@@ -53,6 +53,8 @@ window.addEventListener('load', function(){
     document.getElementById('icon-picks').innerHTML = '<img class="menu-icon-img contain" src="'+GFFL_TIGER+'" alt="">';
   if (typeof GFFL_ALMA!=='undefined' && GFFL_ALMA)
     document.getElementById('icon-alma').innerHTML  = '<img class="menu-icon-img rect" src="'+GFFL_ALMA+'" alt="">';
+  if (typeof GFFL_TROPHY!=='undefined' && GFFL_TROPHY)
+    document.getElementById('icon-leaderboard').innerHTML = '<img class="menu-icon-img contain" src="'+GFFL_TROPHY+'" alt="">';
 
   applyTextSize(localStorage.getItem('gffl_textsize')||'small');
   document.querySelectorAll('.tt-btn').forEach(function(b){ b.addEventListener('click',function(){ applyTextSize(b.dataset.size); }); });

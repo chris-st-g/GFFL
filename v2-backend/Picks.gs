@@ -116,6 +116,21 @@ function getConferencePickData(conference) {
   };
 }
 
+/** Grace window (ms) after kickoff during which a pick is still accepted.
+ *  Covers "I tapped right at game time" + any cache lag. Config: PickGraceMinutes. */
+function pickGraceMs_() {
+  var m = Number(getConfig('PickGraceMinutes'));
+  if (isNaN(m)) m = 5;                 // default 5 minutes
+  return Math.max(0, m) * 60 * 1000;
+}
+
+/** Whether a game is locked FOR PICKING — kickoff + grace has passed. Falls back
+ *  to the game's own locked flag if kickoff is unparseable. */
+function isLockedForPicking_(game) {
+  var k = Date.parse(game.kickoff);
+  return k ? (Date.now() >= k + pickGraceMs_()) : !!game.locked;
+}
+
 /**
  * Submits or changes a pick. Full server-side validation before writing.
  *
@@ -151,8 +166,8 @@ function submitPick(playerName, teamAbbr, week, season) {
   }
   var pointValue = (pickedGame.homeAbbr === teamAbbr) ? pickedGame.homePoints : pickedGame.awayPoints;
 
-  // 4. The picked game must not have started yet
-  if (pickedGame.locked) {
+  // 4. The picked game must not have started yet (with a grace buffer past kickoff)
+  if (isLockedForPicking_(pickedGame)) {
     return { success: false, message: 'That game has already started — pick locked.', pointValue: null };
   }
 
@@ -165,7 +180,7 @@ function submitPick(playerName, teamAbbr, week, season) {
     var existing = getPickForWeek(season, week, playerName);
     if (existing) {
       var existingGame = findGameForTeam(games, existing.teamAbbr);
-      if (existingGame && existingGame.locked) {
+      if (existingGame && isLockedForPicking_(existingGame)) {
         return { success: false, message: 'Current pick (' + existing.teamAbbr + ') is locked — its game already started.', pointValue: null };
       }
       updatePick(season, week, playerName, teamAbbr);
