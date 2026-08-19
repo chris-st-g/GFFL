@@ -30,8 +30,8 @@ function doGet(e) {
     return runRealRosterRoute();
   }
 
-  if (action === 'clearbonuses') {
-    return runClearBonusesRoute();
+  if (action === 'bonusadmin') {
+    return runBonusAdminRoute(e);
   }
 
   // JSON API for the GitHub Pages frontend (reads). GET ?action=api&fn=NAME&args=[...]

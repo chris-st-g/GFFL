@@ -318,38 +318,102 @@ function runLiveTestRoute() {
 }
 
 /**
- * One-off route (?action=clearbonuses): removes ALL rows from both bonus sheets
- * (BonusPoints = per-player bonuses; GameTeamBonuses = per-team bonuses), keeping
- * the header row. Does NOT touch picks or players. Reports every row it removed so
- * the result is transparent. Owner-run via the /exec URL.
+ * Bonus admin route (?action=bonusadmin) — JSON API used by the GFFL-bonus skill to
+ * review / add / clear / manage bonuses without the interactive commissioner login.
+ * Never touches picks or players. Returns JSON.
+ *
+ * Two bonus kinds (see the skill for the full model):
+ *   • TEAM bonuses  (GameTeamBonuses sheet) — the normal case. Extra points on a team
+ *     this week; applies to whoever picks that team. Scope = LEAGUE or a chapter name.
+ *   • PLAYER bonuses (BonusPoints sheet) — RARE. Flat points to one Grahamchise.
+ *
+ * Ops (all scoped to the ESPN-active season; team ops default to the active week):
+ *   op=list                                            → all team + player bonuses this season
+ *   op=clear   [kind=all|team|player]                  → delete season bonus rows (default all)
+ *   op=addteam    game=&team=&points=&scope=&week=     → set/replace a team bonus (points>0)
+ *   op=removeteam game=&team=&scope=&week=             → delete one team bonus
+ *   op=addplayer  player=&points=&reason=&week=        → add a rare per-player bonus
  */
-function runClearBonusesRoute() {
-  var log = [], removed = [];
-  try {
-    [['BonusPoints', 'per-player bonus points'], ['GameTeamBonuses', 'per-team bonuses']].forEach(function(pair) {
-      var sheet = getLeagueSheet().getSheetByName(pair[0]);
-      if (!sheet) { log.push('⚠️ ' + pair[0] + ' sheet not found — skipped'); return; }
-      var data = sheet.getDataRange().getValues();
-      var rows = Math.max(0, data.length - 1);
-      for (var i = 1; i < data.length; i++) removed.push(pair[0] + ': ' + data[i].join(' | '));
-      if (rows > 0) {
-        sheet.clearContents();
-        sheet.getRange(1, 1, 1, data[0].length).setValues([data[0]]);
-      }
-      log.push('✅ ' + pair[0] + ' (' + pair[1] + '): cleared ' + rows + ' row' + (rows === 1 ? '' : 's'));
-    });
+function runBonusAdminRoute(e) {
+  var p      = (e && e.parameter) || {};
+  var op     = String(p.op || 'list').toLowerCase();
+  var season = getActiveSeason();
+  var week   = p.week ? Number(p.week) : getActiveWeek();
+  var out    = { ok: true, op: op, season: season, week: week };
 
-    var body = '<h2 style="font-family:sans-serif;color:#14265C">Bonuses cleared</h2>' +
-      '<ul style="font-family:sans-serif;line-height:1.5">' + log.map(function(l){return '<li>'+l+'</li>';}).join('') + '</ul>' +
-      (removed.length
-        ? '<p style="font-family:sans-serif;margin-top:12px"><strong>Removed rows:</strong></p><pre style="font-family:monospace;font-size:12px;background:#f4f4f4;padding:10px;border-radius:6px;white-space:pre-wrap">' +
-          removed.join('\n').replace(/</g,'&lt;') + '</pre>'
-        : '<p style="font-family:sans-serif">There were no bonus rows to remove.</p>') +
-      '<p style="font-family:sans-serif;color:#666">Picks and players were not touched. Reload the app (hard refresh) to see standings without these bonuses.</p>';
-    return HtmlService.createHtmlOutput(body);
+  try {
+    if (op === 'list') {
+      out.teamBonuses   = readTeamBonusRows_(season);
+      out.playerBonuses = getBonusPoints(season);
+
+    } else if (op === 'clear') {
+      var kind = String(p.kind || 'all').toLowerCase();
+      out.cleared = {};
+      if (kind === 'all' || kind === 'team')   out.cleared.team   = clearSheetSeason_('GameTeamBonuses', 0, season);
+      if (kind === 'all' || kind === 'player') out.cleared.player = clearSheetSeason_('BonusPoints', 1, season);
+
+    } else if (op === 'addteam') {
+      var team = String(p.team || ''), gameId = String(p.game || '');
+      var scope = String(p.scope || 'LEAGUE'), pts = Number(p.points);
+      if (scope !== 'LEAGUE' && getConferenceNames().indexOf(scope) === -1) throw new Error('Invalid scope: ' + scope);
+      if (!pts || pts <= 0) throw new Error('Positive points required (use op=removeteam to clear).');
+      var games = getWeeklyMatchups(week, season), g = null;
+      for (var i = 0; i < games.length; i++) { if (String(games[i].gameId) === gameId) { g = games[i]; break; } }
+      if (!g) throw new Error('Game ' + gameId + ' not found in week ' + week + '.');
+      if (g.homeAbbr !== team && g.awayAbbr !== team) throw new Error(team + ' is not in game ' + gameId + '.');
+      setTeamBonus(season, week, scope, gameId, team, pts);
+      out.added = { type: 'team', team: team, gameId: gameId, scope: scope, week: week, points: pts, gameStarted: !!g.locked };
+
+    } else if (op === 'removeteam') {
+      var rteam = String(p.team || ''), rgame = String(p.game || ''), rscope = String(p.scope || 'LEAGUE');
+      setTeamBonus(season, week, rscope, rgame, rteam, 0);
+      out.removed = { type: 'team', team: rteam, gameId: rgame, scope: rscope, week: week };
+
+    } else if (op === 'addplayer') {
+      var player = String(p.player || '');
+      if (getPlayerNames().indexOf(player) === -1) throw new Error('Player not found: ' + player);
+      var ppts = Number(p.points);
+      if (!ppts) throw new Error('Non-zero points required.');
+      saveBonusPoints(season, week, player, ppts, String(p.reason || ''));
+      out.added = { type: 'player', player: player, week: week, points: ppts, reason: String(p.reason || '') };
+
+    } else {
+      throw new Error('Unknown op: ' + op + ' (use list|clear|addteam|removeteam|addplayer)');
+    }
   } catch (err) {
-    return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif;color:#C8202F">Clear bonuses error</h2><p style="font-family:sans-serif">' + err.message + '</p>');
+    out.ok = false;
+    out.error = err.message;
   }
+
+  return ContentService.createTextOutput(JSON.stringify(out, null, 1)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** All GameTeamBonuses rows for a season, as objects. */
+function readTeamBonusRows_(season) {
+  var sheet = getLeagueSheet().getSheetByName('GameTeamBonuses');
+  if (!sheet) return [];
+  var d = sheet.getDataRange().getValues(), rows = [];
+  for (var i = 1; i < d.length; i++) {
+    if (d[i][0] == season) {
+      rows.push({ week: d[i][1], scope: d[i][2], gameId: d[i][3], team: d[i][4], points: Number(d[i][5]) || 0, timestamp: d[i][6] });
+    }
+  }
+  return rows;
+}
+
+/** Deletes all rows for a season from a sheet (season value in column `col`), keeps header. Returns count removed. */
+function clearSheetSeason_(name, col, season) {
+  var sheet = getLeagueSheet().getSheetByName(name);
+  if (!sheet) return 0;
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+  var keep = [data[0]], removed = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][col] == season) removed++; else keep.push(data[i]);
+  }
+  sheet.clearContents();
+  sheet.getRange(1, 1, keep.length, data[0].length).setValues(keep);
+  return removed;
 }
 
 /**

@@ -666,12 +666,6 @@ function renderAdminPanel(){
      '<p style="font-size:.8rem;color:var(--muted);margin:-4px 0 12px">Add extra point value to an upcoming game — applies to whichever team the picker chooses. Only games that haven\'t kicked off are shown. Set to 0 to clear.</p>'+
      '<div id="bonus-games-list"><p class="loading">Loading games…</p></div></div>'+
 
-   '<div class="admin-form"><h3>Add Bonus Points</h3>'+
-     '<div class="form-group"><label>Grahamchise</label><select id="ab-name">'+nameOptions()+'</select></div>'+
-     '<div class="form-group"><label>Points</label><input type="number" step="0.5" id="ab-pts"></div>'+
-     '<div class="form-group"><label>Reason</label><input type="text" id="ab-reason"></div>'+
-     '<button class="btn btn-primary" id="ab-btn">Add Bonus</button><p class="form-msg" id="ab-msg"></p></div>'+
-
    '<div class="admin-form"><h3>Add Grahamchise</h3>'+
      '<div class="form-group"><label>Name</label><input type="text" id="ap-name"></div>'+
      '<div class="form-group"><label>Conference</label><select id="ap-conf">'+confOptions()+'</select></div>'+
@@ -702,7 +696,6 @@ function renderAdminPanel(){
 
   document.getElementById('aw-btn').addEventListener('click',adminSetWeek);
   document.getElementById('asc-btn').addEventListener('click',adminScoreWeek);
-  document.getElementById('ab-btn').addEventListener('click',adminAddBonus);
   document.getElementById('ap-btn').addEventListener('click',adminAddPlayer);
   document.getElementById('am-btn').addEventListener('click',adminMovePlayer);
   document.getElementById('ar-btn').addEventListener('click',adminToggleRookie);
@@ -791,12 +784,6 @@ function adminSetWeek(){
 function adminScoreWeek(){
   google.script.run.withSuccessHandler(function(r){ STATE.standings=null; msg('asc-msg','Week '+STATE.currentWeek+' scored.'); })
     .withFailureHandler(function(e){ msg('asc-msg',e.message||e,true); }).triggerWeekScoring(ADMIN_TOKEN,STATE.currentWeek,STATE.season);
-}
-function adminAddBonus(){
-  var n=document.getElementById('ab-name').value, p=parseFloat(document.getElementById('ab-pts').value), r=document.getElementById('ab-reason').value.trim();
-  if(!n||isNaN(p)||!r){ msg('ab-msg','Fill in all fields.',true); return; }
-  google.script.run.withSuccessHandler(function(res){ msg('ab-msg',res.success?('Bonus added for '+n+'.'):res.message,!res.success); if(res.success){document.getElementById('ab-pts').value='';document.getElementById('ab-reason').value='';STATE.standings=null;} })
-    .withFailureHandler(function(e){ msg('ab-msg',e.message||e,true); }).addBonusPoints(ADMIN_TOKEN,STATE.season,STATE.currentWeek,n,p,r);
 }
 function adminAddPlayer(){
   var n=document.getElementById('ap-name').value.trim(), cf=document.getElementById('ap-conf').value, dv=document.getElementById('ap-div').value, rk=document.getElementById('ap-rookie').checked;
