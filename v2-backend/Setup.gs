@@ -318,6 +318,41 @@ function runLiveTestRoute() {
 }
 
 /**
+ * One-off route (?action=clearbonuses): removes ALL rows from both bonus sheets
+ * (BonusPoints = per-player bonuses; GameTeamBonuses = per-team bonuses), keeping
+ * the header row. Does NOT touch picks or players. Reports every row it removed so
+ * the result is transparent. Owner-run via the /exec URL.
+ */
+function runClearBonusesRoute() {
+  var log = [], removed = [];
+  try {
+    [['BonusPoints', 'per-player bonus points'], ['GameTeamBonuses', 'per-team bonuses']].forEach(function(pair) {
+      var sheet = getLeagueSheet().getSheetByName(pair[0]);
+      if (!sheet) { log.push('⚠️ ' + pair[0] + ' sheet not found — skipped'); return; }
+      var data = sheet.getDataRange().getValues();
+      var rows = Math.max(0, data.length - 1);
+      for (var i = 1; i < data.length; i++) removed.push(pair[0] + ': ' + data[i].join(' | '));
+      if (rows > 0) {
+        sheet.clearContents();
+        sheet.getRange(1, 1, 1, data[0].length).setValues([data[0]]);
+      }
+      log.push('✅ ' + pair[0] + ' (' + pair[1] + '): cleared ' + rows + ' row' + (rows === 1 ? '' : 's'));
+    });
+
+    var body = '<h2 style="font-family:sans-serif;color:#14265C">Bonuses cleared</h2>' +
+      '<ul style="font-family:sans-serif;line-height:1.5">' + log.map(function(l){return '<li>'+l+'</li>';}).join('') + '</ul>' +
+      (removed.length
+        ? '<p style="font-family:sans-serif;margin-top:12px"><strong>Removed rows:</strong></p><pre style="font-family:monospace;font-size:12px;background:#f4f4f4;padding:10px;border-radius:6px;white-space:pre-wrap">' +
+          removed.join('\n').replace(/</g,'&lt;') + '</pre>'
+        : '<p style="font-family:sans-serif">There were no bonus rows to remove.</p>') +
+      '<p style="font-family:sans-serif;color:#666">Picks and players were not touched. Reload the app (hard refresh) to see standings without these bonuses.</p>';
+    return HtmlService.createHtmlOutput(body);
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif;color:#C8202F">Clear bonuses error</h2><p style="font-family:sans-serif">' + err.message + '</p>');
+  }
+}
+
+/**
  * Wipes players + picks, re-seeds the sample league, and seeds random picks for
  * weeks 1-6 so standings have data. Triggered via ?action=reseed.
  */
