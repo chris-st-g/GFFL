@@ -171,8 +171,10 @@ function setConfig(key, value) {
 
 /**
  * Returns all active grahamchises as full objects, sorted alphabetically.
- * Columns: [PlayerID, Name, Conference, Division, IsRookie]
- * @returns {Array<{playerId, name, conference, division, isRookie}>}
+ * Columns: [PlayerID, Name, Conference, Division, IsRookie, Family]
+ * Family is read from column F; for rows predating the Family column (blank), it
+ * falls back to the legacy FAMILIES map. Run rosteradmin op=migrate to backfill.
+ * @returns {Array<{playerId, name, conference, division, isRookie, family}>}
  */
 function getPlayers() {
   var sheet = getLeagueSheet().getSheetByName('Players');
@@ -181,13 +183,17 @@ function getPlayers() {
   return data.slice(1)
     .filter(function(row) { return row[1]; })
     .map(function(row) {
+      // Family is authoritative from column F (migrateAddFamilyColumn backfilled it).
+      // Read as-is so an intentionally-blank cell clears the family; no legacy fallback
+      // here, or clearing a mapped name would silently re-derive it.
+      var fam = (row[5] === undefined || row[5] === null) ? '' : String(row[5]);
       return {
         playerId:   row[0],
         name:       row[1],
         conference: row[2] || '',
         division:   row[3] || '',
         isRookie:   row[4] === true || row[4] === 'TRUE',
-        family:     familyOf(row[2] || '', row[1])
+        family:     fam
       };
     })
     .sort(function(a, b) { return a.name.localeCompare(b.name); });
@@ -222,14 +228,16 @@ function getPlayerConference(name) {
  * @param {string} conference
  * @param {string} division
  * @param {boolean} [isRookie=false]
+ * @param {string} [family='']
  * @returns {{ success: boolean, message: string }}
  */
-function addPlayer(name, conference, division, isRookie) {
+function addPlayer(name, conference, division, isRookie, family) {
   name = (name || '').trim();
   if (!name) return { success: false, message: 'Name cannot be empty.' };
   conference = (conference || '').trim();
   division   = (division || '').trim();
   isRookie   = isRookie === true || isRookie === 'true';
+  family     = (family || '').trim();
 
   var existing = getPlayerNames();
   if (existing.indexOf(name) !== -1) {
@@ -238,7 +246,7 @@ function addPlayer(name, conference, division, isRookie) {
 
   var sheet  = getLeagueSheet().getSheetByName('Players');
   var nextId = sheet.getLastRow();
-  sheet.appendRow([nextId, name, conference, division, isRookie]);
+  sheet.appendRow([nextId, name, conference, division, isRookie, family]);
   return { success: true, message: name + ' added.' };
 }
 
@@ -278,6 +286,93 @@ function updatePlayerRookieStatus(name, isRookie) {
     }
   }
   return { success: false, message: 'Grahamchise not found.' };
+}
+
+/**
+ * Renames a grahamchise everywhere. Names are the join key, so this cascades the
+ * new name across Players, Picks (PlayerName) and BonusPoints (PlayerName) so no
+ * history orphans. Family/points/picks are preserved (they live on the same rows).
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {{ success, message, picksUpdated, bonusUpdated }}
+ */
+function renamePlayer(oldName, newName) {
+  oldName = (oldName || '').trim();
+  newName = (newName || '').trim();
+  if (!oldName || !newName) return { success: false, message: 'Both old and new names are required.' };
+  if (oldName === newName)  return { success: false, message: 'Old and new names are the same.' };
+
+  var names = getPlayerNames();
+  if (names.indexOf(oldName) === -1) return { success: false, message: 'Grahamchise not found: ' + oldName };
+  if (names.indexOf(newName) !== -1) return { success: false, message: newName + ' already exists.' };
+
+  var ss = getLeagueSheet();
+  var pSheet = ss.getSheetByName('Players');
+  var pData  = pSheet.getDataRange().getValues();
+  for (var i = 1; i < pData.length; i++) {
+    if (pData[i][1] === oldName) { pSheet.getRange(i + 1, 2).setValue(newName); break; }
+  }
+  var picksUpdated = renameInSheet_(ss, 'Picks', 3, oldName, newName);        // PlayerName = col D
+  var bonusUpdated = renameInSheet_(ss, 'BonusPoints', 3, oldName, newName);  // PlayerName = col D
+
+  return {
+    success: true,
+    message: 'Renamed ' + oldName + ' → ' + newName + '.',
+    picksUpdated: picksUpdated,
+    bonusUpdated: bonusUpdated
+  };
+}
+
+/** Replaces a name value in `col` (0-based) of a sheet; returns rows changed. */
+function renameInSheet_(ss, sheetName, col, oldName, newName) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return 0;
+  var data = sheet.getDataRange().getValues(), n = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][col] === oldName) { sheet.getRange(i + 1, col + 1).setValue(newName); n++; }
+  }
+  return n;
+}
+
+/** Sets a grahamchise's Family (Players col F). Empty string = no family. */
+function setPlayerFamily(name, family) {
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  if (data[0].length < 6 || data[0][5] !== 'Family') { sheet.getRange(1, 6).setValue('Family'); }
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === name) {
+      sheet.getRange(i + 1, 6).setValue(family || '');
+      return { success: true, message: name + ' family set to ' + (family || '(none)') + '.' };
+    }
+  }
+  return { success: false, message: 'Grahamchise not found: ' + name };
+}
+
+/** Sets a grahamchise's Division (Players col D) without changing conference. */
+function setPlayerDivision(name, division) {
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === name) {
+      sheet.getRange(i + 1, 4).setValue(division);
+      return { success: true, message: name + ' division set to ' + division + '.' };
+    }
+  }
+  return { success: false, message: 'Grahamchise not found: ' + name };
+}
+
+/** Removes a grahamchise's Players row. Their past picks/bonuses stay in the sheets
+ *  but go inert (standings only counts registered players). */
+function removePlayer(name) {
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === name) {
+      sheet.deleteRow(i + 1);
+      return { success: true, message: name + ' removed.' };
+    }
+  }
+  return { success: false, message: 'Grahamchise not found: ' + name };
 }
 
 // ─── Picks ───────────────────────────────────────────────────────────────────
@@ -376,6 +471,37 @@ function updatePick(season, week, playerName, teamAbbr) {
       sheet.getRange(i + 1, 6).setValue('');                            // PointsEarned (reset)
       sheet.getRange(i + 1, 7).setValue(new Date().toISOString());      // Timestamp
       sheet.getRange(i + 1, 8).setValue('');                            // Result (reset)
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Manually overrides a pick's PointsEarned (col F) and/or Result (col H) for a
+ * given week — commissioner correction. Pass null to leave a field unchanged.
+ * @returns {boolean} false if no matching pick row exists.
+ */
+function setPickPointsResult(season, week, playerName, points, result) {
+  var sheet = getLeagueSheet().getSheetByName('Picks');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] == season && data[i][2] == week && data[i][3] === playerName) {
+      if (points !== null && points !== undefined && points !== '') sheet.getRange(i + 1, 6).setValue(Number(points));
+      if (result !== null && result !== undefined && result !== '')  sheet.getRange(i + 1, 8).setValue(result);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Deletes a player's pick row for a week. Returns false if none found. */
+function deletePick(season, week, playerName) {
+  var sheet = getLeagueSheet().getSheetByName('Picks');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] == season && data[i][2] == week && data[i][3] === playerName) {
+      sheet.deleteRow(i + 1);
       return true;
     }
   }

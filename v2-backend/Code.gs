@@ -34,6 +34,14 @@ function doGet(e) {
     return runBonusAdminRoute(e);
   }
 
+  if (action === 'rosteradmin') {
+    return runRosterAdminRoute(e);
+  }
+
+  if (action === 'pickadmin') {
+    return runPickAdminRoute(e);
+  }
+
   // JSON API for the GitHub Pages frontend (reads). GET ?action=api&fn=NAME&args=[...]
   if (action === 'api') {
     return apiDispatch_(e);

@@ -183,10 +183,45 @@ function familyOf(conference, name) {
   return '';
 }
 
-/** Ordered family names for a conference (empty if that chapter has none). */
+/**
+ * Ordered family names for a conference, derived from the Players sheet's Family
+ * column. Preserves the legacy FAMILIES order for chapters that had one, then
+ * appends any newer families alphabetically. Empty if the chapter has no families.
+ */
 function familiesForConference(conference) {
-  var fams = FAMILIES[conference];
-  return fams ? fams.map(function(f) { return f.family; }) : [];
+  var present = {};
+  getPlayersByConference(conference).forEach(function(p) { if (p.family) present[p.family] = true; });
+  var ordered = [];
+  var legacy = FAMILIES[conference];
+  if (legacy) {
+    legacy.forEach(function(f) { if (present[f.family]) { ordered.push(f.family); delete present[f.family]; } });
+  }
+  Object.keys(present).sort().forEach(function(f) { ordered.push(f); });
+  return ordered;
+}
+
+/**
+ * One-time migration: ensures the Players sheet has a Family column (F) and
+ * backfills each blank Family cell from the legacy FAMILIES map. Idempotent.
+ * @returns {number} how many rows were backfilled
+ */
+function migrateAddFamilyColumn() {
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  var header = data[0] || [];
+  if (header.length < 6 || header[5] !== 'Family') {
+    sheet.getRange(1, 6).setValue('Family').setFontWeight('bold');
+  }
+  var backfilled = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][1]) continue;
+    var cur = data[i][5];
+    if (cur === undefined || cur === null || cur === '') {
+      var f = familyOf(data[i][2] || '', data[i][1]);
+      if (f) { sheet.getRange(i + 1, 6).setValue(f); backfilled++; }
+    }
+  }
+  return backfilled;
 }
 
 /**
@@ -414,6 +449,163 @@ function clearSheetSeason_(name, col, season) {
   sheet.clearContents();
   sheet.getRange(1, 1, keep.length, data[0].length).setValues(keep);
   return removed;
+}
+
+/**
+ * Roster admin route (?action=rosteradmin) — JSON API behind the GFFL-roster skill.
+ * Edit grahamchise identity/placement without the interactive commissioner login.
+ *
+ * Ops:
+ *   op=list                                          → all players (incl. family)
+ *   op=migrate                                       → ensure/backfill the Family column (run once)
+ *   op=rename       old=&new=                        → rename everywhere (cascades Picks + BonusPoints)
+ *   op=setfamily    player=&family=                  → set family (empty family= clears it)
+ *   op=setdivision  player=&division=                → change division (same conference)
+ *   op=move         player=&conference=&division=    → change conference (+ division)
+ *   op=setrookie    player=&rookie=true|false        → set rookie flag
+ *   op=add          name=&conference=&division=&rookie=&family=
+ *   op=remove       player=                          → delete the player's roster row
+ */
+function runRosterAdminRoute(e) {
+  var p  = (e && e.parameter) || {};
+  var op = String(p.op || 'list').toLowerCase();
+  var out = { ok: true, op: op };
+  try {
+    if (op === 'list') {
+      out.players = getPlayers();
+
+    } else if (op === 'migrate') {
+      out.backfilled = migrateAddFamilyColumn();
+      out.message = 'Family column ensured; backfilled ' + out.backfilled + ' player(s) from the legacy map.';
+
+    } else if (op === 'rename') {
+      var r = renamePlayer(p['old'], p['new']);
+      if (!r.success) throw new Error(r.message);
+      out.result = r;
+
+    } else if (op === 'setfamily') {
+      var r2 = setPlayerFamily(p.player, p.family);
+      if (!r2.success) throw new Error(r2.message);
+      out.result = r2;
+
+    } else if (op === 'setdivision') {
+      if (!p.division) throw new Error('division is required.');
+      var conf = getPlayerConference(p.player);
+      if (conf && getDivisionsForConference(conf).indexOf(p.division) === -1) {
+        out.warning = p.division + ' is not a listed division of ' + conf + '.';
+      }
+      var r3 = setPlayerDivision(p.player, p.division);
+      if (!r3.success) throw new Error(r3.message);
+      out.result = r3;
+
+    } else if (op === 'move') {
+      if (getConferenceNames().indexOf(p.conference) === -1) throw new Error('Unknown conference: ' + p.conference);
+      if (!p.division) throw new Error('division is required when changing conference.');
+      if (getDivisionsForConference(p.conference).indexOf(p.division) === -1) {
+        out.warning = p.division + ' is not a listed division of ' + p.conference + '.';
+      }
+      var r4 = movePlayer(p.player, p.conference, p.division);
+      if (!r4.success) throw new Error(r4.message);
+      out.result = r4;
+
+    } else if (op === 'setrookie') {
+      var r5 = updatePlayerRookieStatus(p.player, p.rookie);
+      if (!r5.success) throw new Error(r5.message);
+      out.result = r5;
+
+    } else if (op === 'add') {
+      var r6 = addPlayer(p.name, p.conference, p.division, p.rookie, p.family);
+      if (!r6.success) throw new Error(r6.message);
+      out.result = r6;
+
+    } else if (op === 'remove') {
+      var r7 = removePlayer(p.player);
+      if (!r7.success) throw new Error(r7.message);
+      out.result = r7;
+
+    } else {
+      throw new Error('Unknown op: ' + op + ' (list|migrate|rename|setfamily|setdivision|move|setrookie|add|remove)');
+    }
+  } catch (err) {
+    out.ok = false;
+    out.error = err.message;
+  }
+  return ContentService.createTextOutput(JSON.stringify(out, null, 1)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Pick admin route (?action=pickadmin) — JSON API behind the GFFL-picks skill.
+ * View/fix picks and points for any week, bypassing the kickoff lock. Season is the
+ * ESPN-active season; week defaults to the active week (override with &week=N).
+ *
+ * Ops:
+ *   op=list      [player=] [week=]                  → picks (all weeks if no week)
+ *   op=setpick   player=&team=&week=                → set/replace a pick, IGNORING the
+ *                                                     kickoff lock ("apply after games start").
+ *                                                     Resets points/result — run op=score after.
+ *   op=setpoints player=&week=&points=&result=      → override a pick's points and/or W|L|T
+ *   op=score     [week=]                            → (re)score the week (fills blank points, final games)
+ *   op=delpick   player=&week=                      → delete a pick row
+ */
+function runPickAdminRoute(e) {
+  var p      = (e && e.parameter) || {};
+  var op     = String(p.op || 'list').toLowerCase();
+  var season = getActiveSeason();
+  var week   = p.week ? Number(p.week) : getActiveWeek();
+  var out    = { ok: true, op: op, season: season, week: week };
+  try {
+    if (op === 'list') {
+      var picks = getPicksFromSheet(season, p.week ? week : null);
+      if (p.player) picks = picks.filter(function(x) { return x.playerName === p.player; });
+      out.picks = picks;
+
+    } else if (op === 'setpick') {
+      var player = p.player || '', team = String(p.team || '').toUpperCase();
+      if (getPlayerNames().indexOf(player) === -1) throw new Error('Grahamchise not found: ' + player);
+      var games = getWeeklyMatchups(week, season), inWeek = false, started = false;
+      for (var i = 0; i < games.length; i++) {
+        if (games[i].homeAbbr === team || games[i].awayAbbr === team) { inWeek = true; started = !!games[i].locked; break; }
+      }
+      if (!inWeek) throw new Error(team + ' is not playing in week ' + week + '.');
+      var updated = updatePick(season, week, player, team);
+      if (!updated) savePick(season, week, player, team);
+      out.result = {
+        player: player, week: week, team: team, mode: updated ? 'updated' : 'created', gameStarted: started,
+        note: 'Points/result were reset to blank — run op=score once the game is final, or set them with op=setpoints.'
+      };
+
+    } else if (op === 'setpoints') {
+      if (getPlayerNames().indexOf(p.player) === -1) throw new Error('Grahamchise not found: ' + p.player);
+      var pts = (p.points === undefined || p.points === '') ? null : Number(p.points);
+      var res = (p.result === undefined || p.result === '') ? null : String(p.result).toUpperCase();
+      if (res !== null && ['W', 'L', 'T'].indexOf(res) === -1) throw new Error('result must be W, L, or T.');
+      if (pts === null && res === null) throw new Error('Provide points and/or result.');
+      var ok = setPickPointsResult(season, week, p.player, pts, res);
+      if (!ok) throw new Error('No pick for ' + p.player + ' in week ' + week + ' (create one with op=setpick first).');
+      out.result = { player: p.player, week: week, points: pts, result: res };
+
+    } else if (op === 'score') {
+      scoreWeekPicks(season, week);
+      out.result = { message: 'Scored week ' + week + '.' };
+      out.picks = getPicksFromSheet(season, week);
+
+    } else if (op === 'delpick') {
+      if (!deletePick(season, week, p.player)) throw new Error('No pick for ' + p.player + ' in week ' + week + '.');
+      out.result = { player: p.player, week: week, deleted: true };
+
+    } else if (op === 'clearall') {
+      var before = getPicksFromSheet(season, null).length;
+      clearPicksForSeason(season);
+      out.result = { cleared: before, message: 'Cleared all ' + before + ' pick(s) for season ' + season + '.' };
+
+    } else {
+      throw new Error('Unknown op: ' + op + ' (list|setpick|setpoints|score|delpick|clearall)');
+    }
+  } catch (err) {
+    out.ok = false;
+    out.error = err.message;
+  }
+  return ContentService.createTextOutput(JSON.stringify(out, null, 1)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /**

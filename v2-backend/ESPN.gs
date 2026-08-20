@@ -110,16 +110,16 @@ function resolveAutoWeek_(c) {
 }
 
 /**
- * Human display label for a week. ESPN indexes preseason with the Hall of Fame
- * game as week 1, so its "week N" is the official "Preseason Week N-1". Regular
- * season is shown as-is.
+ * Human display label for a week. ESPN week 1 of the preseason is the Hall of Fame
+ * game; weeks after that are shown as "Preseason Wk N" using ESPN's own index
+ * (so ESPN week 3 → "Preseason Wk 3"). Regular season is shown as-is.
  * @param {number} week        ESPN week index
  * @param {number} seasonType  1=pre, 2=regular, 3=post
  */
 function weekLabel(week, seasonType) {
   if (seasonType === 1) {
     if (week <= 1) return 'Hall of Fame';
-    return 'Preseason Wk ' + (week - 1);
+    return 'Preseason Wk ' + week;
   }
   if (seasonType === 3) return 'Playoffs Wk ' + week;
   return 'Week ' + week;
