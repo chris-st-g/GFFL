@@ -516,10 +516,13 @@ function deletePick(season, week, playerName) {
  * @param {number} season
  * @param {number} week
  */
-function scoreWeekPicks(season, week) {
+function scoreWeekPicks(season, week, useCache) {
   var sheet     = getLeagueSheet().getSheetByName('Picks');
   var allData   = sheet.getDataRange().getValues();
-  var matchups  = getWeeklyMatchups(week, season, null, null, true); // fresh (no cache) for accurate winners
+  // Manual scoring forces a fresh ESPN read; auto/on-open scoring rides the shared
+  // 120s cache so at most one viewer per window pays the fetch. Winners being up to
+  // ~2 min stale is fine — the next open mops up anything missed (idempotent).
+  var matchups  = getWeeklyMatchups(week, season, null, null, !useCache);
   var bonusData = getBonusData(season, week);
 
   // Picker name → conference (for conference-scoped bonuses)
@@ -556,6 +559,27 @@ function scoreWeekPicks(season, week) {
   }
 
   Logger.log('Scored picks for week ' + week + ', ' + season);
+}
+
+/**
+ * Opportunistic scoring run on app open. Cheap by design:
+ *   1. Bails immediately if the active week has no unscored picks — so once a week
+ *      is fully scored, every future open does zero extra work (no ESPN call).
+ *   2. When there IS work, scores using CACHED matchups (shared 120s window), so at
+ *      most one viewer per window pays the ESPN fetch; everyone else rides the cache.
+ * Idempotent and self-healing: any game not yet final is simply skipped and picked
+ * up on a later open. Failures are swallowed so a scoring hiccup never breaks the
+ * standings read.
+ */
+function autoScoreOnOpen_(season, week) {
+  try {
+    var picks = getPicksFromSheet(season, week);
+    var hasUnscored = picks.some(function(p) { return p.pointsEarned === null; });
+    if (!hasUnscored) return;            // nothing to do → no ESPN call, no writes
+    scoreWeekPicks(season, week, true);  // true = use cached matchups
+  } catch (err) {
+    Logger.log('autoScoreOnOpen_ skipped: ' + err);
+  }
 }
 
 // ─── Bonus Points ─────────────────────────────────────────────────────────────

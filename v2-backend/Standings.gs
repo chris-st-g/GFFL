@@ -22,6 +22,11 @@
  * }}
  */
 function getStandings(season) {
+  // Score-on-open: fill in any games that went final since the last view. Cheap and
+  // gated (see autoScoreOnOpen_) — no ESPN call unless the active week has unscored
+  // picks. Runs before we read picks below so fresh results show this same load.
+  autoScoreOnOpen_(season, getActiveWeek());
+
   var picks          = getPicksFromSheet(season, null);
   var bonuses        = getBonusPoints(season);
   var players        = getPlayers();
