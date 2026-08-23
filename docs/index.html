@@ -402,7 +402,7 @@ var STATE = {
   players:[], playerNames:[], conferenceNames:[], leagueStructure:[],
   currentWeek:1, season:2025,
   pickConf:null, pickName:localStorage.getItem('gffl_player')||null,
-  leaderConf:null, standings:null, view:'home', confData:{}
+  leaderConf:null, leaderShowAll:false, standings:null, view:'home', confData:{}
 };
 
 // ─── Nav stack (back button walks the flow; empty = home) ───────────────────
@@ -919,52 +919,39 @@ function renderLeaderboard(){
     h+='<button class="pill'+(conf===STATE.leaderConf?' active':'')+'" data-conf="'+esc(conf)+'">'+esc(conf.replace(' Chapter',''))+'</button>';
   });
   h+='</div>';
-  // 5th button: full standings for every conference/division/grahamchise
-  h+='<button class="pill pill-all'+(STATE.leaderConf==='__ALL__'?' active':'')+'" data-conf="__ALL__">All Grahamchises</button>';
+  // 5th button: toggle — expand ALL grahamchises within the SELECTED conference
+  // (every division, every player) vs. the default top-2 per division.
+  h+='<button class="pill pill-all'+(STATE.leaderShowAll?' active':'')+'" data-all="1">All Grahamchises</button>';
 
-  if(STATE.leaderConf==='__ALL__'){
-    h+=allGrahamchisesHTML(data);
+  var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.leaderConf;})[0];
+  if(!conf||!conf.divisions.length){
+    h+='<div class="empty">No standings yet for '+esc(STATE.leaderConf)+'.</div>';
   } else {
-    var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.leaderConf;})[0];
-    if(!conf||!conf.divisions.length){
-      h+='<div class="empty">No standings yet for '+esc(STATE.leaderConf)+'.</div>';
-    } else {
-      conf.divisions.forEach(function(dv){
-        var top=dv.players.slice(0,2);
+    conf.divisions.forEach(function(dv){
+      var list=STATE.leaderShowAll?dv.players:dv.players.slice(0,2);
+      if(STATE.leaderShowAll){
+        // Everyone shown → static head, no drill-down needed
+        h+='<div class="lead-div"><div class="lead-div-head static"><span>'+esc(dv.division)+'</span>'+
+           '<span class="drill">'+dv.players.length+'</span></div>';
+      } else {
         h+='<div class="lead-div"><div class="lead-div-head" data-conf="'+esc(conf.conference)+'" data-div="'+esc(dv.division)+'">'+
            '<span>'+esc(dv.division)+'</span><span class="drill">View all '+dv.players.length+' &#8250;</span></div>';
-        top.forEach(function(p,i){ h+=leadRow(p,i+1); });
-        h+='</div>';
-      });
-      // Rookie of the Year (per conference)
-      var rooks=(data.rookieStandings||[]).filter(function(p){return p.conference===STATE.leaderConf;});
-      if(rooks.length){
-        h+='<p class="section-title">Rookie of the Year Race — '+esc(STATE.leaderConf)+'</p><div class="lead-div">';
-        rooks.slice(0,3).forEach(function(p,i){ h+=leadRow(p,i+1); });
-        h+='</div>';
       }
+      list.forEach(function(p,i){ h+=leadRow(p,i+1); });
+      h+='</div>';
+    });
+    // Rookie of the Year (per conference)
+    var rooks=(data.rookieStandings||[]).filter(function(p){return p.conference===STATE.leaderConf;});
+    if(rooks.length){
+      h+='<p class="section-title">Rookie of the Year Race — '+esc(STATE.leaderConf)+'</p><div class="lead-div">';
+      rooks.slice(0,3).forEach(function(p,i){ h+=leadRow(p,i+1); });
+      h+='</div>';
     }
   }
   c.innerHTML=h;
-  bindAll(c,'.pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
+  bindAll(c,'.pills.grid2 .pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
+  bindAll(c,'.pill-all',function(){ STATE.leaderShowAll=!STATE.leaderShowAll; renderLeaderboard(); });
   bindAll(c,'.lead-div-head:not(.static)',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
-}
-
-// Full expansion: every conference → every division → ALL grahamchises, ranked.
-function allGrahamchisesHTML(data){
-  var confs=data.conferences||[];
-  if(!confs.length) return '<div class="empty">No standings yet.</div>';
-  var h='';
-  confs.forEach(function(cf){
-    h+='<p class="section-title">'+esc(cf.conference.replace(' Chapter',''))+'</p>';
-    (cf.divisions||[]).forEach(function(dv){
-      h+='<div class="lead-div"><div class="lead-div-head static"><span>'+esc(dv.division)+'</span>'+
-         '<span class="drill">'+dv.players.length+'</span></div>';
-      dv.players.forEach(function(p,i){ h+=leadRow(p,i+1); });
-      h+='</div>';
-    });
-  });
-  return h;
 }
 
 function leadRow(p,rank){
