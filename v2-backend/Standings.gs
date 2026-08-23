@@ -31,7 +31,13 @@ function getStandings(season) {
   var bonuses        = getBonusPoints(season);
   var players        = getPlayers();
   var currentWeek    = getActiveWeek();
-  var completedWeeks = Math.max(0, currentWeek - 1);
+
+  // Weeks whose pick window has fully CLOSED — a missed pick only becomes a loss
+  // once you can no longer pick that week (its LAST game has locked). Past weeks
+  // are always closed; the current week counts only after its final game kicks off.
+  var closedWeeks = [];
+  for (var cw = 1; cw < currentWeek; cw++) closedWeeks.push(cw);
+  if (currentWeek >= 1 && weekPicksClosed_(currentWeek, season)) closedWeeks.push(currentWeek);
 
   // Initialize a record for every registered grahamchise
   var map = {};
@@ -83,12 +89,11 @@ function getStandings(season) {
     });
   }
 
-  // Totals + missed-week losses
+  // Totals + missed-week losses (one loss per closed week the player didn't pick)
   var standings = players.map(function(p) {
     var entry = map[p.name];
     entry.totalPoints = entry.pickPoints + entry.bonusPoints;
-    var missedWeeks = Math.max(0, completedWeeks - Object.keys(entry.weeklyDetail).length);
-    entry.losses += missedWeeks;
+    closedWeeks.forEach(function(w) { if (!entry.weeklyDetail[w]) entry.losses++; });
     return entry;
   });
 

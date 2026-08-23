@@ -131,6 +131,24 @@ function isLockedForPicking_(game) {
   return k ? (Date.now() >= k + pickGraceMs_()) : !!game.locked;
 }
 
+/** Whether a week's pick window has fully CLOSED — its LAST game has locked
+ *  (final kickoff + grace has passed). Standings uses this to decide when a
+ *  missed pick becomes a loss: you can't be charged a loss for a week while you
+ *  can still pick its last game. Uses cached matchups (cheap). */
+function weekPicksClosed_(week, season) {
+  try {
+    var games = getWeeklyMatchups(week, season);
+    if (!games || !games.length) return false;
+    var lastKick = 0;
+    games.forEach(function(g) { var t = Date.parse(g.kickoff); if (t && t > lastKick) lastKick = t; });
+    if (!lastKick) return false;
+    return Date.now() >= lastKick + pickGraceMs_();
+  } catch (e) {
+    Logger.log('weekPicksClosed_ error: ' + e.message);
+    return false;
+  }
+}
+
 /**
  * Submits or changes a pick. Full server-side validation before writing.
  *
