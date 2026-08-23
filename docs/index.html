@@ -198,10 +198,12 @@
   .pill.active{background:var(--navy);color:#fff;border-color:var(--navy)}
   .pills.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;overflow:visible}
   .pills.grid2 .pill{white-space:normal;flex:none;text-align:center;padding:12px 8px}
+  .pill-all{display:block;width:100%;text-align:center;padding:12px 8px;margin:0 0 6px;box-sizing:border-box}
 
   .lead-div{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin:12px 0;overflow:hidden}
   .lead-div-head{background:var(--navy);color:#fff;padding:11px 16px;font-weight:800;font-size:.92rem;
     display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .lead-div-head.static{cursor:default}
   .lead-div-head .drill{font-size:.68rem;font-weight:700;opacity:.85}
   .lead-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
   .lead-row:last-child{border-bottom:none}
@@ -310,6 +312,11 @@
         <div class="menu-body"><h3>Make Your Picks</h3><p>Submit or change this week's picks</p></div>
         <div class="menu-chev">&#8250;</div>
       </div>
+      <div class="menu-card" onclick="openGames()">
+        <div class="menu-icon" id="icon-games">🗓️</div>
+        <div class="menu-body"><h3>This Week's Games</h3><p>See every matchup, live scores &amp; results</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
       <div class="menu-card" onclick="openLeaderboard()">
         <div class="menu-icon" id="icon-leaderboard">🏆</div>
         <div class="menu-body"><h3>See Leaderboard</h3><p>Standings by conference &amp; division</p></div>
@@ -336,6 +343,9 @@
 
     <!-- ── Picks ── -->
     <section id="view-picks" class="view"><div id="picks-content"></div></section>
+
+    <!-- ── This Week's Games (view-only) ── -->
+    <section id="view-games" class="view"><div id="games-content"></div></section>
 
     <!-- ── Everyone's picks ── -->
     <section id="view-everyone" class="view"><div id="everyone-content"></div></section>
@@ -534,6 +544,7 @@ function applyTextSize(size){
 
 // ─── Home menu actions ──────────────────────────────────────────────────────
 function startPicks(){ STATE.pickConf=null; navGo(screenPickConf); }
+function openGames(){ navGo(screenGames); }
 function openLeaderboard(){ navGo(screenLeaderboard); }
 function openAlma(){ if(!STATE.almaConf) STATE.almaConf=STATE.conferenceNames[0]; navGo(screenAlma); }
 function openNewsletter(){ navGo(function(){ showView('newsletter'); }); }
@@ -780,6 +791,49 @@ function teamBtn(abbr,name,logo,w,l,pts,picked,bonus,locked,score,showScore,isWi
   '</button>';
 }
 
+// ─── THIS WEEK'S GAMES (view-only) ──────────────────────────────────────────
+// Games are league-wide; we source them from one conference's cached pick data
+// (remembered player's conference, else the first). No picking here.
+function gamesConf(){
+  if(STATE.pickName){ var p=STATE.players.filter(function(x){return x.name===STATE.pickName;})[0]; if(p&&p.conference) return p.conference; }
+  return STATE.conferenceNames[0]||null;
+}
+function screenGames(){
+  showView('games');
+  var c=document.getElementById('games-content');
+  var conf=gamesConf();
+  if(!conf){ c.innerHTML='<p class="empty">No games available yet.</p>'; return; }
+  var cd=STATE.confData[conf];
+  if(cd){ renderGamesOnly(cd); return; }   // instant from cache
+  c.innerHTML='<p class="loading">Loading '+(STATE.weekLabel||('Week '+STATE.currentWeek))+' games…</p>';
+  loadConfData(conf, function(){
+    var cd2=STATE.confData[conf];
+    if(cd2) renderGamesOnly(cd2);
+    else c.innerHTML='<p class="error-msg">Could not load games. Please retry.</p>';
+  });
+}
+function gamesActionsHTML(){
+  return '<div class="actions">'+
+     '<button class="btn btn-primary act-makepick">Go Make a Pick</button>'+
+     '<button class="btn btn-ghost act-leader">Leaderboard</button></div>';
+}
+function renderGamesOnly(cd){
+  var c=document.getElementById('games-content');
+  var h='<p class="section-title">This Week\'s Games — '+esc(STATE.weekLabel||('Week '+cd.week))+'</p>';
+  h+=gamesActionsHTML();   // top buttons: Make a Pick / Leaderboard
+  var games=(cd.games||[]).slice().sort(function(a,b){ return String(a.kickoff||'').localeCompare(String(b.kickoff||'')); });
+  if(!games.length){
+    h+='<div class="empty">No games found for '+esc(STATE.weekLabel||('Week '+cd.week))+'.</div>';
+  } else {
+    games.forEach(function(g){ h+=gameCard(g,null); });   // null = nothing picked/highlighted
+  }
+  h+=gamesActionsHTML();   // bottom buttons too (long scroll)
+  c.innerHTML=h;
+  c.querySelectorAll('.team-btn').forEach(function(b){ b.disabled=true; });   // view-only
+  bindAll(c,'.act-makepick',function(){ startPicks(); });
+  bindAll(c,'.act-leader',function(){ navGo(screenLeaderboard); });
+}
+
 // ─── EVERYONE'S PICKS ───────────────────────────────────────────────────────
 function screenEveryone(){
   showView('everyone');
@@ -865,29 +919,52 @@ function renderLeaderboard(){
     h+='<button class="pill'+(conf===STATE.leaderConf?' active':'')+'" data-conf="'+esc(conf)+'">'+esc(conf.replace(' Chapter',''))+'</button>';
   });
   h+='</div>';
+  // 5th button: full standings for every conference/division/grahamchise
+  h+='<button class="pill pill-all'+(STATE.leaderConf==='__ALL__'?' active':'')+'" data-conf="__ALL__">All Grahamchises</button>';
 
-  var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.leaderConf;})[0];
-  if(!conf||!conf.divisions.length){
-    h+='<div class="empty">No standings yet for '+esc(STATE.leaderConf)+'.</div>';
+  if(STATE.leaderConf==='__ALL__'){
+    h+=allGrahamchisesHTML(data);
   } else {
-    conf.divisions.forEach(function(dv){
-      var top=dv.players.slice(0,2);
-      h+='<div class="lead-div"><div class="lead-div-head" data-conf="'+esc(conf.conference)+'" data-div="'+esc(dv.division)+'">'+
-         '<span>'+esc(dv.division)+'</span><span class="drill">View all '+dv.players.length+' &#8250;</span></div>';
-      top.forEach(function(p,i){ h+=leadRow(p,i+1); });
-      h+='</div>';
-    });
-    // Rookie of the Year (per conference)
-    var rooks=(data.rookieStandings||[]).filter(function(p){return p.conference===STATE.leaderConf;});
-    if(rooks.length){
-      h+='<p class="section-title">Rookie of the Year Race — '+esc(STATE.leaderConf)+'</p><div class="lead-div">';
-      rooks.slice(0,3).forEach(function(p,i){ h+=leadRow(p,i+1); });
-      h+='</div>';
+    var conf=(data.conferences||[]).filter(function(x){return x.conference===STATE.leaderConf;})[0];
+    if(!conf||!conf.divisions.length){
+      h+='<div class="empty">No standings yet for '+esc(STATE.leaderConf)+'.</div>';
+    } else {
+      conf.divisions.forEach(function(dv){
+        var top=dv.players.slice(0,2);
+        h+='<div class="lead-div"><div class="lead-div-head" data-conf="'+esc(conf.conference)+'" data-div="'+esc(dv.division)+'">'+
+           '<span>'+esc(dv.division)+'</span><span class="drill">View all '+dv.players.length+' &#8250;</span></div>';
+        top.forEach(function(p,i){ h+=leadRow(p,i+1); });
+        h+='</div>';
+      });
+      // Rookie of the Year (per conference)
+      var rooks=(data.rookieStandings||[]).filter(function(p){return p.conference===STATE.leaderConf;});
+      if(rooks.length){
+        h+='<p class="section-title">Rookie of the Year Race — '+esc(STATE.leaderConf)+'</p><div class="lead-div">';
+        rooks.slice(0,3).forEach(function(p,i){ h+=leadRow(p,i+1); });
+        h+='</div>';
+      }
     }
   }
   c.innerHTML=h;
   bindAll(c,'.pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
-  bindAll(c,'.lead-div-head',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
+  bindAll(c,'.lead-div-head:not(.static)',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
+}
+
+// Full expansion: every conference → every division → ALL grahamchises, ranked.
+function allGrahamchisesHTML(data){
+  var confs=data.conferences||[];
+  if(!confs.length) return '<div class="empty">No standings yet.</div>';
+  var h='';
+  confs.forEach(function(cf){
+    h+='<p class="section-title">'+esc(cf.conference.replace(' Chapter',''))+'</p>';
+    (cf.divisions||[]).forEach(function(dv){
+      h+='<div class="lead-div"><div class="lead-div-head static"><span>'+esc(dv.division)+'</span>'+
+         '<span class="drill">'+dv.players.length+'</span></div>';
+      dv.players.forEach(function(p,i){ h+=leadRow(p,i+1); });
+      h+='</div>';
+    });
+  });
+  return h;
 }
 
 function leadRow(p,rank){

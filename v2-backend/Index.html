@@ -36,6 +36,11 @@
         <div class="menu-body"><h3>Make Your Picks</h3><p>Submit or change this week's picks</p></div>
         <div class="menu-chev">&#8250;</div>
       </div>
+      <div class="menu-card" onclick="openGames()">
+        <div class="menu-icon" id="icon-games">🗓️</div>
+        <div class="menu-body"><h3>This Week's Games</h3><p>See every matchup, live scores &amp; results</p></div>
+        <div class="menu-chev">&#8250;</div>
+      </div>
       <div class="menu-card" onclick="openLeaderboard()">
         <div class="menu-icon" id="icon-leaderboard">🏆</div>
         <div class="menu-body"><h3>See Leaderboard</h3><p>Standings by conference &amp; division</p></div>
@@ -62,6 +67,9 @@
 
     <!-- ── Picks ── -->
     <section id="view-picks" class="view"><div id="picks-content"></div></section>
+
+    <!-- ── This Week's Games (view-only) ── -->
+    <section id="view-games" class="view"><div id="games-content"></div></section>
 
     <!-- ── Everyone's picks ── -->
     <section id="view-everyone" class="view"><div id="everyone-content"></div></section>
