@@ -2,6 +2,10 @@
 .clasp.json
 node_modules/
 
+# Cloudflare Wrangler local cache (beta retired; source is on the old cf-beta history)
+.wrangler/
+cf-worker/
+
 # Secrets and environment
 .env
 .env.local

@@ -1,88 +1,82 @@
-# CLAUDE.md — Graham Family Football League
+# CLAUDE.md — Graham Family Football League (GFFL 2.0)
 
 ---
 
 ## READ THIS FIRST (Session Start Protocol)
 
-1. Read this file fully before touching any code
-2. Check the **Current Status** section at the bottom — it describes where we left off
-3. Never read or display values from PropertiesService — treat them as write-only from Claude's perspective
-4. After any code change, follow the **Deployment Process** below — changes do not go live automatically
+1. Read this file fully before touching any code.
+2. Read **HANDOFF.md** for where we left off (current week/season, live status, open threads).
+3. Never read or display values from `PropertiesService` — treat them as write-only from Claude's perspective.
+4. After any code change, follow the **Deployment Process** below — changes do not go live automatically.
+5. **GFFL 2.0 lives in `v2-backend/` + `v2-frontend/` + `docs/`.** The old `src/` directory is **legacy 1.0 and is retiring** — do not edit or deploy it.
 
 ---
 
 ## Project Overview
 
-- **What it is:** Family fantasy football league tracker. Each family member (a "Grahamchise") picks one NFL team per week and earns points based on that team's win record relative to its opponent.
-- **Backend:** Google Apps Script (`.gs` files) — handles all logic, sheet reads/writes, ESPN API calls
-- **Frontend:** HTML/CSS/JS served by Apps Script via `HtmlService` — single-page app with 4 tabs
-- **Database:** Google Sheets — 4 tabs (Config, Players, Picks, BonusPoints)
-- **Scores:** ESPN public API — no API key required
-- **Hosting:** Google Apps Script web app — free, no server needed
+- **What it is:** Family fantasy pick'em. Each family member (a "Grahamchise") picks one NFL team per week and earns points based on that team's win record relative to its opponent.
+- **Backend:** Google Apps Script (`v2-backend/*.gs`) — all logic, Sheet reads/writes, ESPN calls. Exposes a JSON API via `doGet`/`doPost` (`?action=api&fn=NAME&args=[...]`).
+- **Frontend (what the family uses):** a static **GitHub Pages** site — `docs/index.html`, served at **https://chris-st-g.github.io/GFFL/**. It is *built* from the same `v2-backend/*.html` sources by `node v2-frontend/build.js`, which inlines the `<?!= include() ?>` templates and injects a shim that reimplements `google.script.run` on top of `fetch()` so the identical frontend code talks to the Apps Script JSON API cross-origin.
+- **Database:** Google Sheets (its OWN sheet, created by `setupSheet()`) — tabs: Config, Players, Picks, BonusPoints, GameTeamBonuses.
+- **Scores:** ESPN public API — no key required.
+
+```
+v2-backend/*.gs,*.html   →  clasp push/deploy  →  Apps Script web app (JSON API at /exec)
+v2-backend/*.html        →  node v2-frontend/build.js  →  docs/index.html  →  GitHub Pages (family app)
+```
 
 ---
 
 ## File Map
 
-All source files live under `src/` — clasp is configured to push from that directory.
+Source lives under `v2-backend/` — clasp pushes from there (`v2-backend/.clasp.json`, gitignored).
 
 | File | Purpose |
 |---|---|
-| `src/Code.gs` | Web app entry point — `doGet()`, `include()`, `getLeagueData()`, setup route |
-| `src/ESPN.gs` | Fetches NFL matchups from ESPN public API — `getWeeklyMatchups()` |
-| `src/Scoring.gs` | All scoring logic — `classifyGame()`, `resolvePickPoints()`, `resolvePickResult()`, `isGraceBowlWeek()` |
-| `src/Sheets.gs` | All Sheets read/write — Config, Players, Picks, BonusPoints, `scoreWeekPicks()` |
-| `src/Picks.gs` | Pick submission and pick page data — `submitPick()`, `getPickPageData()` |
-| `src/Standings.gs` | Calculates and returns league standings — `getStandings()` |
-| `src/Admin.gs` | Commissioner panel — login, set week, add bonus points, trigger scoring |
-| `src/Setup.gs` | One-time setup — `setupSheet()`, `seedTestPlayers()`, `seedRandomPicks()`, `migrateAddResultColumn()` |
-| `src/Index.html` | SPA shell — 4 tabs: Picks, Standings, Games, Admin |
-| `src/Styles.html` | All CSS — included into Index.html via `<?!= include('Styles') ?>` |
-| `src/Scripts.html` | All frontend JS — included into Index.html via `<?!= include('Scripts') ?>` |
-| `src/appsscript.json` | Apps Script manifest — OAuth scopes, webapp config |
+| `v2-backend/Code.gs` | Entry points — `doGet()`/`doPost()`, `apiDispatch_()`, `apiFunctions_()` whitelist, `getLeagueData()`, `include()`, owner `?action=` routes |
+| `v2-backend/ESPN.gs` | ESPN fetch — `getWeeklyMatchups()`, active week/season/type (`espnCurrent`, `resolveAutoWeek_`), `weekLabel()` |
+| `v2-backend/Scoring.gs` | Scoring logic — `classifyGame()`, `resolvePickPoints()`, `resolvePickResult()`, `isGraceBowlWeek()` |
+| `v2-backend/Sheets.gs` | All Sheets read/write — Players/Picks/Bonuses, `scoreWeekPicks()`, `autoScoreOnOpen_()`, rename/family/division helpers |
+| `v2-backend/Picks.gs` | Pick submission + pick-page data — `submitPick()`, `getConferencePickData()`, lock helpers (`isLockedForPicking_`, `weekPicksClosed_`) |
+| `v2-backend/Standings.gs` | Standings aggregation — `getStandings()` (score-on-open + per-week missed-loss logic) |
+| `v2-backend/Alma.gs` | Alma Cup survival streak — `getAlmaCup()`, `setAlmaWinner()` |
+| `v2-backend/Admin.gs` | Commissioner panel — login/token, set week, bonuses, `triggerWeekScoring()` |
+| `v2-backend/Setup.gs` | Setup + migrations + **owner routes** (`runBonusAdminRoute`/`runRosterAdminRoute`/`runPickAdminRoute`), `LEAGUE_STRUCTURE`/family helpers |
+| `v2-backend/Index.html` | SPA shell + view sections |
+| `v2-backend/Styles.html` | All CSS (`<?!= include('Styles') ?>`) |
+| `v2-backend/Scripts.html` | All frontend JS (`<?!= include('Scripts') ?>`) |
+| `v2-backend/*Data.html` | Embedded data-URI images (Logo, Tiger, Alma, Trophy) + `AppleIcon.html` |
+| `v2-backend/appsscript.json` | Manifest — OAuth scopes, webapp config |
+| `v2-frontend/build.js` | Builds `docs/index.html` from the `v2-backend/*.html` sources (google.script.run→fetch shim). Its `FN` list must match `apiFunctions_()` |
+| `docs/index.html` | The built GitHub Pages app (commit after building) |
 
 ---
 
 ## Sheet Structure
 
-**Config** — key/value league settings
+**Config** — key/value settings (`CurrentWeek`, `Season`, `AutoWeek`, `PickGraceMinutes`, …).
 
-| Column | Value |
-|---|---|
-| Key | e.g. `CurrentWeek`, `Season` |
-| Value | e.g. `6`, `2025` |
+**Players** — one row per Grahamchise. **Name is the join key** (Picks/BonusPoints reference players by name — a rename must cascade).
 
-**Players** — one row per Grahamchise
+| PlayerID | Name | Conference | Division | IsRookie | Family |
+|---|---|---|---|---|---|
 
-| Column | Value |
-|---|---|
-| PlayerID | Auto-incrementing integer |
-| Name | Player display name |
+**Picks** — one row per weekly pick (at most one per player per week).
 
-**Picks** — one row per weekly pick
+| PickID | Season | Week | PlayerName | TeamAbbr | PointsEarned | Timestamp | Result |
+|---|---|---|---|---|---|---|---|
 
-| Column | Value |
-|---|---|
-| PickID | Auto-incrementing integer |
-| Season | e.g. `2025` |
-| Week | e.g. `6` |
-| PlayerName | Must match a name in Players tab |
-| TeamAbbr | NFL team abbreviation, e.g. `KC` |
-| PointsEarned | Blank until scored, then 0–3 |
-| Timestamp | ISO string |
-| Result | `W`, `L`, `T`, or blank if pending |
+`PointsEarned` blank until scored; `Result` = `W`/`L`/`T` or blank.
 
-**BonusPoints** — commissioner-applied bonuses
+**BonusPoints** — commissioner per-player bonuses (rare).
 
-| Column | Value |
-|---|---|
-| BonusID | Auto-incrementing integer |
-| Season | e.g. `2025` |
-| Week | Week number, or blank for season-level bonus |
-| PlayerName | Must match a name in Players tab |
-| Points | Number of bonus points |
-| Reason | Text description |
-| Timestamp | ISO string |
+| BonusId | Season | Week | PlayerName | Points | Reason | Timestamp |
+|---|---|---|---|---|---|---|
+
+**GameTeamBonuses** — per-team bonus points, scoped LEAGUE or per-chapter (additive to a game's base value).
+
+| Season | Week | Scope | GameId | TeamAbbr | Bonus | Timestamp |
+|---|---|---|---|---|---|---|
 
 ---
 
@@ -90,97 +84,96 @@ All source files live under `src/` — clasp is configured to push from that dir
 
 | Weeks | Rule | Points |
 |---|---|---|
-| 1–3 | **Regular** — all games | Both teams: 1 pt |
-| 4–18 | **Deuce** — equal win records | Both teams: 2 pts |
+| 1–3 | **Flat** — all games (`EARLY_FLAT_WEEKS=3`) | Both teams: 1 pt |
+| 4–18 | **Deuce** — equal WIN records | Both teams: 2 pts |
 | 4–18 | **Trey** — win records differ by exactly 1 | Underdog: 3 pts, Favorite: 1 pt |
 | 4–18 | **Regular** — win records differ by 2+ | Both teams: 1 pt |
 
-- **Ties** earn **half** the pick's point value (Deuce tie = 1, Trey 3-side tie = 1.5, Trey 1-side tie = 0.5)
-- **Grace Bowl** = weeks 16–18. Same scoring rules, different UI label only
-- Win records are looked up from ESPN at game time (not season totals)
+- Deuce/Trey are computed on **WINS ONLY**. Win records are looked up from ESPN at game time.
+- **Ties** earn **half** the pick's point value (Deuce tie = 1, Trey 3-side tie = 1.5, Trey 1-side tie = 0.5).
+- **Standings total = pick points + player bonuses.** Record (W/L/T) comes from each pick's `Result`.
+- **A missed week counts as a Loss only once that week's pick window has fully closed** — i.e. its LAST game passes kickoff + grace (`weekPicksClosed_`). You are never charged a loss while you can still pick the week's final game. Applied per-week in `getStandings` (`closedWeeks`).
+- **Scoring is automatic (score-on-open):** `getStandings` runs `autoScoreOnOpen_()` on every load — gated (no ESPN call if the active week has no unscored picks) and uses the shared cached matchups. The admin "score now" button (`scoreWeekPicks(...,useCache=false)`) forces a fresh ESPN read.
+- **Grace Bowl** = weeks 16–18 — same scoring, different UI label. Preseason labels via `weekLabel()`.
 
 ---
 
 ## Secrets Rules — STRICT
 
-- **NEVER** read, print, log, or display values retrieved from `PropertiesService`
-- **NEVER** store IDs, keys, or credentials as string literals in any `.gs` file
-- All config values are stored via `PropertiesService.getScriptProperties()`
-- Reference values in code as `getProperty('KEY_NAME')` only — never the actual value
-- If a literal API key or credential appears in a file, flag it immediately and do not display it
+- **NEVER** read, print, log, or display values retrieved from `PropertiesService`.
+- **NEVER** store IDs, keys, or credentials as string literals in any `.gs` file.
+- All config values are stored via `PropertiesService.getScriptProperties()`; reference as `getProperty('KEY')` only.
+- The commissioner password is stored **hashed** (`ADMIN_PASSWORD_HASH`, set via `setAdminPassword()`) — never keep the plaintext in the repo.
+- If a literal API key or credential appears in a file, flag it immediately and do not display it.
 
-**PropertiesService keys in use:**
+**PropertiesService keys:** `SHEET_ID`, `ADMIN_PASSWORD_HASH`, `ADMIN_TOKEN`, `ADMIN_EXPIRY`.
 
-| Key | What it stores |
-|---|---|
-| `SHEET_ID` | Google Sheet ID — set by `setupSheet()` |
-| `ADMIN_PASSWORD_HASH` | SHA-256 hash of admin password — set by `setAdminPassword()` |
-| `ADMIN_TOKEN` | Active session token — set on login |
-| `ADMIN_EXPIRY` | Token expiry timestamp — set on login |
+---
+
+## Owner routes (`?action=`) — unauthenticated (testing)
+
+These run in `doGet()` **before** any password check and drive the local Claude skills:
+`bonusadmin`, `rosteradmin`, `pickadmin`, plus `setup`/`livetest`. They can edit/wipe data with just the URL. The in-app admin panel is unaffected (still password-gated via `validateToken`).
+
+**Decision:** intentionally left open during the testing phase. **Re-lock before wider rollout** (planned: a route key hashed in PropertiesService, required on all write routes). See memory `project_gffl_route_auth`.
 
 ---
 
 ## Google Apps Script Rules
 
-- All backend logic lives in `.gs` files — never in `Scripts.html`
-- Frontend HTML/CSS/JS lives in `.html` files served via `HtmlService`
-- Call external APIs (ESPN) server-side from `.gs` files using `UrlFetchApp.fetch()` — never from the browser
-- Use `SpreadsheetApp` to read/write Sheets — never hardcode sheet data in code
-- `.clasp.json` is gitignored — it contains the Apps Script project ID and should never be committed
+- All backend logic in `.gs`; frontend HTML/CSS/JS in `.html`.
+- Call ESPN server-side (`UrlFetchApp.fetch()`), never from the browser.
+- Use `SpreadsheetApp` — never hardcode sheet data.
+- **New backend function callable from the frontend?** Add it to `apiFunctions_()` in `Code.gs` **and** the `FN` list in `v2-frontend/build.js`.
+- `.clasp.json` is gitignored — contains the script ID; never commit.
 
 ---
 
 ## ESPN API
 
-- No API key required — public endpoint
-- NFL scoreboard: `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard`
-- Add `?week=N&seasontype=2&dates=YEAR` for a specific week
-- All calls go through `ESPN.gs` — `getWeeklyMatchups(week, season)` returns processed game data
+- No key required. **Use `cdn.espn.com/core`** — `site.api.espn.com` **403s** from Google's servers.
+- All calls go through `ESPN.gs` — `getWeeklyMatchups(week, season, conference, seasonType, noCache)`. Live scores/status/winner are already in the cached payload — no extra calls.
+- Base games are cached (~120s) so one ESPN fetch serves all conferences/viewers.
 
 ---
 
 ## Deployment Process
 
-**Claude creates and publishes all deployments via clasp — no manual editor steps.**
-
-Path prefix for all clasp commands:
+**Claude publishes all deployments via clasp — no manual editor steps.** Path prefix:
 ```
 export PATH="/c/Program Files/nodejs:/c/Users/chris/AppData/Roaming/npm:$PATH"
 ```
 
-**After any code change:**
+There is **ONE** GFFL 2.0 deployment (the URL the Pages frontend + everyone uses). Always re-publish that existing deployment — never create a new one.
 
-1. Push code to Apps Script HEAD:
+**After a code change:**
+
+1. Push to Apps Script HEAD (from `v2-backend/`):
    ```
-   clasp push --force
+   cd v2-backend && clasp push --force
    ```
+2. Publish a new version at the same URL:
+   ```
+   clasp deploy --deploymentId AKfycbydtM2JPIEvgYtG4jsvNFA0qmHh6uZIlNAPc4bi_CPRIhuOoR9dMbRMcNHYIC1-1UHqbw --description "<what changed>"
+   ```
+   (`clasp push` alone only updates HEAD; deployments stay pinned until re-deployed. Output `Deployed <id> @N` — N is the new version.)
+3. **If any `.html` changed**, rebuild the family frontend and commit it:
+   ```
+   node v2-frontend/build.js      # regenerates docs/index.html
+   ```
+   Commit `docs/index.html` (GitHub Pages serves it). Pure `.gs` changes don't need a rebuild.
 
-2. Publish a new version to a deployment (this is what makes the change live for that URL).
-   `clasp deploy --deploymentId <ID>` re-publishes an **existing** deployment as a new
-   version at the **same URL** — always pass `--deploymentId`, never create a new deployment.
-   - **PREVIEW** (default target for all new work — deploy here without asking):
-     ```
-     clasp deploy --deploymentId AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt --description "<what changed>"
-     ```
-   - **LIVE / testers** — only after the user explicitly approves promoting preview → live:
-     ```
-     clasp deploy --deploymentId AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I --description "<what changed>"
-     ```
-
-`clasp push` alone only updates HEAD — versioned deployments stay pinned until re-deployed
-with `clasp deploy`. Note the output line `Deployed <id> @N` — N is the new version number.
-
-**Live app URL:**
-`https://script.google.com/macros/s/AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I/exec`
+**JSON API base (/exec):**
+`https://script.google.com/macros/s/AKfycbydtM2JPIEvgYtG4jsvNFA0qmHh6uZIlNAPc4bi_CPRIhuOoR9dMbRMcNHYIC1-1UHqbw/exec`
 
 ---
 
 ## Git Rules
 
-- `.clasp.json` is gitignored — contains script ID, treat as sensitive
-- `node_modules/` is gitignored
-- Commit in small, working increments with clear messages
-- Never commit secrets, IDs, or credentials
+- Single branch: **`main`** (default). Commit in small, working increments with clear messages.
+- Commit/push only when the user asks.
+- GitHub Pages serves `main/docs` — after an `.html` change, rebuild `docs/` and commit it in the same change.
+- Never commit secrets, IDs, or credentials. `.clasp.json`, `node_modules/`, `.claude/`, `.wrangler/` are gitignored.
 
 ---
 
@@ -188,43 +181,27 @@ with `clasp deploy`. Note the output line `Deployed <id> @N` — N is the new ve
 
 | Resource | URL |
 |---|---|
-| Live app | https://script.google.com/macros/s/AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I/exec |
-| Google Sheet | https://docs.google.com/spreadsheets/d/1Q0vsRVJLDZU37cHU1Ytlnt5I6nfs4mv8rQrznu85u0g/edit |
-| Apps Script editor | https://script.google.com/home/projects/1ZPx2xknKYtcI43FLn2aHq--O6nRvFH4c55XaIDqYhWYWuVlCsULYXewX/edit |
+| Live app (family) | https://chris-st-g.github.io/GFFL/ |
+| JSON API (/exec) | https://script.google.com/macros/s/AKfycbydtM2JPIEvgYtG4jsvNFA0qmHh6uZIlNAPc4bi_CPRIhuOoR9dMbRMcNHYIC1-1UHqbw/exec |
+| Apps Script editor | https://script.google.com/home/projects/1l5FGTAmgLKUTQt-oLzzEvrsGEsKZbqtUSw3KoEZeqvC7f8KHNl6Scj49/edit |
 | GitHub repo | https://github.com/chris-st-g/GFFL |
+
+The GFFL 2.0 Google Sheet ID lives in `PropertiesService.SHEET_ID` (do not print it); open it from the Apps Script project if needed.
+
+---
+
+## Local Claude skills
+
+Under `.claude/skills/` (gitignored, local-only): **GFFL-roster** (edit players), **GFFL-picks** (edit picks/points/score), **GFFL-bonus** (team/player bonuses). Each drives the matching `?action=` owner route.
 
 ---
 
 ## Current Status
 
-*Last updated: 2026-08-17*
-
-### Deployment strategy — TWO deployments (important)
-- Claude publishes deployments with `clasp deploy --deploymentId <ID>` (see **Deployment Process** above). Deploy to PREVIEW freely; deploy to LIVE only with the user's explicit OK.
-- **LIVE / testers** — deploymentId `AKfycbwvKO87nAT8UUik1ZIPDRR-7fuTivQ9nr-5xntf__kBTRCBR1Wce0eVhGcefA1U5r8I` — **@64** (freeze lifted 2026-08-17 for the shared live test). Still gate LIVE deploys on the user's OK.
-- **PREVIEW / user** — deploymentId `AKfycbzng1z4gAOFZmc4QuCwhgcPHQu0ZoAmZKIwEuFGczZP6X6mCPP_mj_3UBCqYGMEyfMt` — **@63**, gets all new work for review. `clasp push` updates HEAD only; versioned deployments stay pinned until re-deployed. Both share the same Sheet + Config.
-- **NO FAKE DATA (2026-08-17):** PreviewMode/Demo mode was fully removed — the app **always** shows real ESPN data (no simulated scores/times/odds, no toggle). `PreviewMode` Config is now inert (unread). `makeFakeOdds`, `PREVIEW_TIMES`, `adminSetPreviewMode`, and the Demo Mode admin card are gone.
-- **LIVE TEST armed 2026-08-17:** `?action=livetest` route sets AutoWeek ON + zeroes points (clears picks+bonuses for the ESPN-detected season). App follows the real NFL slate — currently **2026 Preseason**. Season-type support: `espnCurrent()` captures `seasonType`, `getActiveSeasonType()` (1=pre/2=reg/3=post), `getWeeklyMatchups` defaults to it + includes it in the cache key. `resolveAutoWeek_()` rolls past a fully-final week to the next upcoming slate (ESPN's pointer lags). `weekLabel()` shows preseason as official numbering (ESPN wk N = "Preseason Wk N-1"; wk1 = "Hall of Fame"). End the test: turn Auto OFF in Admin.
-
-### Built
-- **Conferences (called "Chapters"):** Mt. Washington, Louisville, St. Gertrude, St. George. `LEAGUE_STRUCTURE` in `Sheets.gs`. Divisions still placeholder surnames; sample roster is throwaway.
-- **Scoring:** Deuce/Trey on WINS ONLY, flat Weeks 1–3 (`EARLY_FLAT_WEEKS=3`), tie = HALF points; per-conference Rookie of Year.
-- **Pick flow:** conference→name→games; tap-to-Confirm (optimistic, instant); per-game kickoff lock; started games shown greyed (final) / red-glow (live) with live scores + winner; re-pick from "See Everyone's Picks"; sort by time / Deuce-Trey-first.
-- **Bonuses:** per-team, scoped LEAGUE or per-chapter (additive). `GameTeamBonuses` sheet. Admin editor = scope pills + stepper +/− + Confirm.
-- **Alma Cup** (`Alma.gs`, 🔥 card): survival streak, per-conf resolution, `setAlmaWinner()` override.
-- **Performance:** base-games CacheService (120s, one ESPN fetch/week for all conferences), background prefetch on open, client-side conference cache (`STATE.confData`), `LockService` on pick writes.
-- **Logo:** real GFFL shield embedded as data-URI (`src/LogoData.html`, source `src/assets/gffl-logo.png`). Small/Large text toggle on home.
-- **Home menu icons:** photo icons embedded as data-URIs — `src/TigerData.html` (`GFFL_TIGER`, Bengal tiger → "Make Your Picks") and `src/AlmaData.html` (`GFFL_ALMA`, Alma's photo → "Alma Cup", rounded-rect `.rect` so hair isn't cropped). Included in `Index.html`, applied in `Scripts.html` load handler, styled `.menu-icon-img`. Emoji fallbacks remain if the vars are absent.
-- **Maverick (Gemini commissioner assistant): REMOVED from preview 2026-08-17** — free-tier Gemini timed out under load after ~2 requests. Code (`Gemini.gs`, `MaverickData.html`, admin card + `commissionerPlan`/`commissionerApply`, Hornet avatar `GFFL_MAVERICK`) was fully reverted; recoverable from git history if revisited with a paid key.
-- **ESPN:** MUST use `cdn.espn.com/core` (site.api 403s from GAS). Live scores/status/winner already in the cached data — no extra calls.
-
-### Go-live features (BUILT but gated off — only active when auto-week is ON)
-- **Automatic Week** (Admin toggle) → reads live NFL week/season/type from ESPN (`getActiveWeek/Season/SeasonType`), rolls past a fully-final week (`resolveAutoWeek_`).
-- **Picks-open window** (`getPicksOpenInfo`): next week visible-but-locked immediately after the prior week's last game; picks open **24h after that final game**; locks on real kickoffs; times in viewer TZ (default ET).
-- **Demo mode: REMOVED** — app always uses real ESPN data (see NO FAKE DATA above).
-- **iOS home-screen icon:** `src/AppleIcon.html` (`<link rel="apple-touch-icon">`, GFFL shield on white, 180×180) included in `Index.html` head. NOTE: Apps Script serves inside a sandbox iframe, so iOS may still fall back to a screenshot/letter — custom home-screen icons aren't guaranteed for raw Apps Script web apps.
+See **HANDOFF.md** for the live snapshot (current week/season, deployment version, open threads). At last update: real roster loaded (Mt. Washington, Louisville, St. Gertrude, St. George; St. George has families), no fake/demo data, Automatic Week supported, score-on-open live.
 
 ### Pending / next
-- Replace sample roster with **real names + division mapping** (user provides).
-- **Go-live switch:** Admin → Automatic Week ON; set `PreviewMode` OFF; load real roster; promote preview→live. Optional: cache-warming cron (needs `script.scriptapp` scope re-added).
-- **Phase 2:** Grace Bowl tournament + Halo Bowl bracket (qualifiers: Grace Bowl champ + Alma Cup + per-conf Rookie of Year).
+- **Re-lock the owner `?action=` routes** before wider rollout.
+- Retire legacy 1.0 (`src/`).
+- **Phase 2:** Grace Bowl tournament + Halo Bowl bracket (qualifiers: Grace Bowl champ + Alma Cup + per-conf Rookie of the Year).
+- Newsletters tab (Drive PDFs, browsable by year/week).
