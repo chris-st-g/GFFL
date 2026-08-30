@@ -407,7 +407,8 @@ function getPicksFromSheet(season, week) {
         teamAbbr:     row[4],
         pointsEarned: (earned === '' || earned === null || earned === undefined) ? null : Number(earned),
         timestamp:    row[6],
-        result:       row[7] || null   // 'W', 'L', 'T', or null if pending
+        result:       row[7] || null,  // 'W', 'L', 'T', or null if pending
+        seasonType:   (row[8] === '' || row[8] === null || row[8] === undefined) ? null : Number(row[8])  // 1=pre 2=reg 3=post
       };
     });
 }
@@ -448,7 +449,9 @@ function hasPickForWeek(season, week, playerName) {
 function savePick(season, week, playerName, teamAbbr) {
   var sheet  = getLeagueSheet().getSheetByName('Picks');
   var nextId = sheet.getLastRow(); // 1-based; header is row 1, so this = next id
-  sheet.appendRow([nextId, season, week, playerName, teamAbbr, '', new Date().toISOString(), '']);
+  // Col I (index 8) = SeasonType (1=pre, 2=regular, 3=post) so preseason test picks
+  // never pollute regular-season standings even when week numbers collide.
+  sheet.appendRow([nextId, season, week, playerName, teamAbbr, '', new Date().toISOString(), '', getActiveSeasonType()]);
   return { success: true, message: 'Pick saved.' };
 }
 

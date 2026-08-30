@@ -598,8 +598,15 @@ function runPickAdminRoute(e) {
       clearPicksForSeason(season);
       out.result = { cleared: before, message: 'Cleared all ' + before + ' pick(s) for season ' + season + '.' };
 
+    } else if (op === 'ensurecols') {
+      // Label the SeasonType header (col I) added for preseason exclusion.
+      var psheet = getLeagueSheet().getSheetByName('Picks');
+      var hdr = psheet.getRange(1, 9).getValue();
+      if (hdr !== 'SeasonType') psheet.getRange(1, 9).setValue('SeasonType');
+      out.result = { header: 'SeasonType', wasBlank: hdr !== 'SeasonType' };
+
     } else {
-      throw new Error('Unknown op: ' + op + ' (list|setpick|setpoints|score|delpick|clearall)');
+      throw new Error('Unknown op: ' + op + ' (list|setpick|setpoints|score|delpick|clearall|ensurecols)');
     }
   } catch (err) {
     out.ok = false;

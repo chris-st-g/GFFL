@@ -27,7 +27,9 @@ function getStandings(season) {
   // picks. Runs before we read picks below so fresh results show this same load.
   autoScoreOnOpen_(season, getActiveWeek());
 
-  var picks          = getPicksFromSheet(season, null);
+  // Exclude preseason picks (seasonType 1) — they share week numbers with the
+  // regular season and must never count toward standings.
+  var picks          = getPicksFromSheet(season, null).filter(function(p) { return p.seasonType !== 1; });
   var bonuses        = getBonusPoints(season);
   var players        = getPlayers();
   var currentWeek    = getActiveWeek();
@@ -160,7 +162,7 @@ function getGrahamchiseProfile(season, name) {
 
   // Every week's pick (weeks 1..current). Missed past weeks are flagged; a missed
   // week only "counts" as a loss once closed — mirror getStandings via weekPicksClosed_.
-  var mine = getPicksFromSheet(season, null).filter(function(p) { return p.playerName === name; });
+  var mine = getPicksFromSheet(season, null).filter(function(p) { return p.playerName === name && p.seasonType !== 1; });
   var byWeek = {}; mine.forEach(function(p) { byWeek[p.week] = p; });
   var currentClosed = weekPicksClosed_(currentWeek, season);
   var picks = [];
