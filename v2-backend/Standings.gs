@@ -130,3 +130,111 @@ function getStandings(season) {
     season:          season
   };
 }
+
+/**
+ * Full profile for one grahamchise: record, every week's pick + result, current
+ * pick (even before kickoff), division & conference position, and trophies.
+ * Reuses getStandings (so it inherits score-on-open + the same ranking/loss rules).
+ *
+ * @param {number} season
+ * @param {string} name
+ * @returns {object} profile, or { ok:false, error }
+ */
+function getGrahamchiseProfile(season, name) {
+  season = season || getActiveSeason();
+  var std = getStandings(season);
+  var me  = std.standings.filter(function(p) { return p.playerName === name; })[0];
+  if (!me) return { ok: false, error: 'Grahamchise not found: ' + name };
+  var currentWeek = std.currentWeek;
+  var seasonType  = getActiveSeasonType();
+
+  // Division rank/size (divisionRank was set on the shared entry by getStandings).
+  var confObj = (std.conferences || []).filter(function(c) { return c.conference === me.conference; })[0];
+  var divObj  = confObj ? confObj.divisions.filter(function(d) { return d.division === me.division; })[0] : null;
+
+  // Conference rank/size — std.standings is globally sorted, so filtering to this
+  // conference preserves rank order.
+  var confPlayers = std.standings.filter(function(p) { return p.conference === me.conference; });
+  var confRank = 0;
+  for (var i = 0; i < confPlayers.length; i++) { if (confPlayers[i].playerName === name) { confRank = i + 1; break; } }
+
+  // Every week's pick (weeks 1..current). Missed past weeks are flagged; a missed
+  // week only "counts" as a loss once closed — mirror getStandings via weekPicksClosed_.
+  var mine = getPicksFromSheet(season, null).filter(function(p) { return p.playerName === name; });
+  var byWeek = {}; mine.forEach(function(p) { byWeek[p.week] = p; });
+  var currentClosed = weekPicksClosed_(currentWeek, season);
+  var picks = [];
+  for (var w = 1; w <= currentWeek; w++) {
+    var pk = byWeek[w];
+    var closed = (w < currentWeek) || currentClosed;
+    picks.push({
+      week:         w,
+      weekLabel:    weekLabel(w, seasonType),
+      team:         pk ? pk.teamAbbr : null,
+      pointsEarned: pk ? pk.pointsEarned : null,
+      result:       pk ? pk.result : null,
+      missed:       !pk && closed,          // no pick AND the window has closed → counted loss
+      pending:      !pk && !closed          // no pick yet but can still pick
+    });
+  }
+
+  // Current pick — shown even if the game hasn't started.
+  var currentPick = null;
+  var cur = byWeek[currentWeek];
+  if (cur) {
+    var g = findGameForTeam(getWeeklyMatchups(currentWeek, season, me.conference), cur.teamAbbr);
+    currentPick = {
+      week:         currentWeek,
+      weekLabel:    weekLabel(currentWeek, seasonType),
+      team:         cur.teamAbbr,
+      started:      g ? (g.status === 'in' || g.status === 'post') : false,
+      locked:       g ? !!g.locked : false,
+      result:       cur.result,
+      pointsEarned: cur.pointsEarned
+    };
+  }
+
+  return {
+    ok:             true,
+    season:         season,
+    currentWeek:    currentWeek,
+    player:         { name: me.playerName, conference: me.conference, division: me.division, isRookie: me.isRookie },
+    record:         { wins: me.wins || 0, losses: me.losses || 0, ties: me.ties || 0 },
+    totalPoints:    me.totalPoints,
+    pickPoints:     me.pickPoints,
+    bonusPoints:    me.bonusPoints,
+    divisionRank:   me.divisionRank || null,
+    divisionSize:   divObj ? divObj.players.length : null,
+    conferenceRank: confRank || null,
+    conferenceSize: confPlayers.length,
+    picks:          picks,
+    currentPick:    currentPick,
+    trophies:       getTrophiesFor_(season, name, me, std)
+  };
+}
+
+/** Honors earned by a grahamchise this season (empty early on). */
+function getTrophiesFor_(season, name, me, std) {
+  var t = [];
+  // Alma Cup champion (only once a conference is actually decided).
+  try {
+    var alma = getAlmaCup(season);
+    (alma.conferences || []).forEach(function(c) {
+      var decided = c.status && c.status !== 'in_progress' && c.status !== 'needs_manual';
+      if (decided && c.winner === name) {
+        t.push({ icon: '🔥', label: 'Alma Cup Champion — ' + c.conference.replace(' Chapter', '') });
+      }
+    });
+  } catch (e) {}
+  // Season-complete honors: division & conference champ, Rookie of the Year.
+  var seasonOver = std.currentWeek > 18;
+  if (seasonOver) {
+    if (me.divisionRank === 1) t.push({ icon: '🥇', label: me.division + ' Division Champion' });
+    if (me.conferenceRank === 1) t.push({ icon: '🏆', label: me.conference.replace(' Chapter', '') + ' Champion' });
+    var roy = (std.rookieStandings || []).filter(function(p) { return p.conference === me.conference; })[0];
+    if (me.isRookie && roy && roy.playerName === name) {
+      t.push({ icon: '🌟', label: 'Rookie of the Year — ' + me.conference.replace(' Chapter', '') });
+    }
+  }
+  return t;
+}

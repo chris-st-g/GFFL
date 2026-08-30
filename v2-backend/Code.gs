@@ -128,6 +128,7 @@ function apiFunctions_() {
     getPickPageData:      getPickPageData,
     submitPick:           submitPick,
     getStandings:        getStandings,
+    getGrahamchiseProfile: getGrahamchiseProfile,
     getAlmaCup:          getAlmaCup,
     adminLogin:          adminLogin,
     setCurrentWeek:      setCurrentWeek,

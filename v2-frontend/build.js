@@ -22,7 +22,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbydtM2JPIEvgYtG4jsvNFA0
 // Backend functions the frontend may call (must match apiFunctions_() in Code.gs).
 const FN = [
   'getLeagueData', 'getConferencePickData', 'getConferencePicks', 'getPickPageData',
-  'submitPick', 'getStandings', 'getAlmaCup', 'adminLogin', 'setCurrentWeek',
+  'submitPick', 'getStandings', 'getGrahamchiseProfile', 'getAlmaCup', 'adminLogin', 'setCurrentWeek',
   'triggerWeekScoring', 'addBonusPoints', 'adminAddPlayerFull', 'adminMovePlayer',
   'adminToggleRookie', 'setAlmaWinner', 'adminSetAutoWeek', 'adminGetBonusEditor',
   'adminSetTeamBonus'

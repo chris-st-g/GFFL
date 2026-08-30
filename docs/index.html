@@ -218,6 +218,36 @@
   .badge-rookie{display:inline-block;background:var(--red);color:#fff;font-size:.54rem;font-weight:900;
     padding:1px 5px;border-radius:4px;margin-left:6px;letter-spacing:.5px;vertical-align:middle}
 
+  .lead-clickable{cursor:pointer}
+  .lead-chev{color:var(--muted);font-weight:900;font-size:1.1rem;flex:0 0 auto;margin-left:2px}
+  .stbl tr.st-clickable{cursor:pointer}
+
+  /* ─── Grahamchise profile ───────────────────────────────────────────────── */
+  .prof-sub{color:var(--muted);font-weight:700;font-size:.85rem;margin:-4px 0 12px}
+  .prof-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .prof-card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:14px 12px;text-align:center}
+  .prof-big{font-weight:900;color:var(--navy);font-size:1.5rem;line-height:1.1}
+  .prof-lbl{font-size:.64rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin-top:4px}
+  .prof-note{font-size:.74rem;color:var(--muted);text-align:center;margin:8px 0 0}
+  .prof-current{background:var(--navy);color:#fff;border-radius:14px;padding:14px 16px;margin:16px 0 4px;box-shadow:var(--shadow)}
+  .prof-current.none{background:#5b6270}
+  .prof-current-lbl{font-size:.64rem;text-transform:uppercase;letter-spacing:.5px;opacity:.85;font-weight:800}
+  .prof-current-team{font-size:1.6rem;font-weight:900;margin:2px 0}
+  .prof-current-stat{font-size:.8rem;opacity:.92}
+  .prof-trophies{display:flex;flex-direction:column;gap:8px}
+  .prof-trophy{display:flex;align-items:center;gap:10px;background:var(--card);border-radius:12px;box-shadow:var(--shadow);
+    padding:12px 14px;font-weight:800;color:var(--navy)}
+  .prof-trophy .pt-icon{font-size:1.3rem}
+  .pw-row{justify-content:space-between}
+  .pw-week{font-weight:700;color:var(--navy);font-size:.9rem}
+  .pw-right{display:flex;align-items:center;gap:8px}
+  .pw-team{font-weight:800;color:var(--navy)}
+  .pw-pts{font-weight:900;color:var(--navy);min-width:1.2rem;text-align:right}
+  .pw-res{font-size:.62rem;font-weight:900;padding:2px 7px;border-radius:5px;letter-spacing:.5px}
+  .pw-res.w{background:#dff3e6;color:var(--win)} .pw-res.l{background:#fbe1e1;color:var(--loss)}
+  .pw-res.t{background:#fdf0d6;color:#8a6d00} .pw-res.pend{background:#eef1f6;color:var(--muted)}
+  .pw-res.none{background:#eef1f6;color:var(--muted)}
+
   /* Full division table (drill-in) */
   .stbl{width:100%;border-collapse:collapse;background:var(--card);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
   .stbl th{background:var(--navy);color:#fff;font-size:.66rem;text-transform:uppercase;letter-spacing:.5px;padding:9px 8px;text-align:left}
@@ -268,7 +298,7 @@
 <body>
 <script>(function(){
   var API="https://script.google.com/macros/s/AKfycbydtM2JPIEvgYtG4jsvNFA0qmHh6uZIlNAPc4bi_CPRIhuOoR9dMbRMcNHYIC1-1UHqbw/exec";
-  var FN=["getLeagueData","getConferencePickData","getConferencePicks","getPickPageData","submitPick","getStandings","getAlmaCup","adminLogin","setCurrentWeek","triggerWeekScoring","addBonusPoints","adminAddPlayerFull","adminMovePlayer","adminToggleRookie","setAlmaWinner","adminSetAutoWeek","adminGetBonusEditor","adminSetTeamBonus"];
+  var FN=["getLeagueData","getConferencePickData","getConferencePicks","getPickPageData","submitPick","getStandings","getGrahamchiseProfile","getAlmaCup","adminLogin","setCurrentWeek","triggerWeekScoring","addBonusPoints","adminAddPlayerFull","adminMovePlayer","adminToggleRookie","setAlmaWinner","adminSetAutoWeek","adminGetBonusEditor","adminSetTeamBonus"];
   function Runner(s,f){this._s=s;this._f=f;}
   Runner.prototype.withSuccessHandler=function(c){return new Runner(c,this._f);};
   Runner.prototype.withFailureHandler=function(c){return new Runner(this._s,c);};
@@ -952,14 +982,16 @@ function renderLeaderboard(){
   bindAll(c,'.pills.grid2 .pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
   bindAll(c,'.pill-all',function(){ STATE.leaderShowAll=!STATE.leaderShowAll; renderLeaderboard(); });
   bindAll(c,'.lead-div-head:not(.static)',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
+  bindAll(c,'.lead-row[data-name]',function(el){ navGo(function(){ screenProfile(el.dataset.name); }); });
 }
 
 function leadRow(p,rank){
   var rc=rank===1?'r1':(rank===2?'r2':'');
-  return '<div class="lead-row"><div class="lead-rank '+rc+'">'+rank+'</div>'+
+  return '<div class="lead-row lead-clickable" data-name="'+esc(p.playerName)+'"><div class="lead-rank '+rc+'">'+rank+'</div>'+
     '<div class="lead-name">'+esc(p.playerName)+(p.isRookie?'<span class="badge-rookie">R</span>':'')+
       '<div class="lead-sub">'+(p.wins||0)+'-'+(p.losses||0)+(p.ties?'-'+p.ties:'')+'</div></div>'+
-    '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div></div>';
+    '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div>'+
+    '<span class="lead-chev">&#8250;</span></div>';
 }
 
 function renderDivision(confName,divName){
@@ -972,7 +1004,7 @@ function renderDivision(confName,divName){
   h+='<table class="stbl"><thead><tr><th>#</th><th>Grahamchise</th><th class="c">Pts</th><th class="c">W</th><th class="c">L</th><th class="c">T</th></tr></thead><tbody>';
   dv.players.forEach(function(p){
     var r=p.divisionRank||1;
-    h+='<tr><td class="c">'+(r===1?'🏆':r)+'</td>'+
+    h+='<tr class="st-clickable" data-name="'+esc(p.playerName)+'"><td class="c">'+(r===1?'🏆':r)+'</td>'+
        '<td><strong>'+esc(p.playerName)+'</strong>'+(p.isRookie?'<span class="badge-rookie">R</span>':'')+'</td>'+
        '<td class="c pts">'+p.totalPoints+'</td>'+
        '<td class="c rec-w">'+(p.wins||0)+'</td>'+
@@ -980,6 +1012,83 @@ function renderDivision(confName,divName){
        '<td class="c rec-t">'+(p.ties||0)+'</td></tr>';
   });
   h+='</tbody></table>';
+  c.innerHTML=h;
+  bindAll(c,'tr.st-clickable',function(el){ navGo(function(){ screenProfile(el.dataset.name); }); });
+}
+
+// ─── GRAHAMCHISE PROFILE ────────────────────────────────────────────────────
+function screenProfile(name){
+  showView('leaderboard');
+  var c=document.getElementById('leaderboard-content');
+  c.innerHTML='<p class="loading">Loading '+esc(name)+'…</p>';
+  google.script.run
+    .withSuccessHandler(function(p){
+      if(!p || !p.ok){ c.innerHTML='<p class="error-msg">'+esc((p&&p.error)||'Could not load profile.')+'</p>'; return; }
+      renderProfile(p);
+    })
+    .withFailureHandler(function(e){ c.innerHTML='<p class="error-msg">Could not load: '+(e.message||e)+'</p>'; })
+    .getGrahamchiseProfile(STATE.season, name);
+}
+
+function ordinal(n){ if(!n) return '—'; var s=['th','st','nd','rd'],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+
+function renderProfile(p){
+  var c=document.getElementById('leaderboard-content');
+  var rec=p.record||{wins:0,losses:0,ties:0};
+  var h='<p class="section-title">'+esc(p.player.name)+(p.player.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</p>';
+  h+='<p class="prof-sub">'+esc(p.player.conference.replace(' Chapter',''))+' · '+esc(p.player.division)+' Division</p>';
+
+  // Headline stat cards
+  h+='<div class="prof-cards">';
+  h+='<div class="prof-card"><div class="prof-big">'+p.totalPoints+'</div><div class="prof-lbl">Points</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+(rec.wins||0)+'-'+(rec.losses||0)+(rec.ties?'-'+rec.ties:'')+'</div><div class="prof-lbl">Record</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+ordinal(p.divisionRank)+'</div><div class="prof-lbl">in Division'+(p.divisionSize?' of '+p.divisionSize:'')+'</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+ordinal(p.conferenceRank)+'</div><div class="prof-lbl">in Conference'+(p.conferenceSize?' of '+p.conferenceSize:'')+'</div></div>';
+  h+='</div>';
+  if(p.bonusPoints){ h+='<p class="prof-note">Includes '+p.bonusPoints+' bonus pt'+(p.bonusPoints!==1?'s':'')+' ('+p.pickPoints+' from picks).</p>'; }
+
+  // Current pick (shown even before kickoff)
+  if(p.currentPick){
+    var cp=p.currentPick;
+    var stat=cp.result?('Result: '+cp.result+(cp.pointsEarned!=null?' · '+cp.pointsEarned+' pt'+(cp.pointsEarned!==1?'s':''):''))
+            :(cp.started?'Game in progress / final — not scored yet':(cp.locked?'Locked — game started':'Pick can still be changed'));
+    h+='<div class="prof-current"><div class="prof-current-lbl">Current Pick · '+esc(cp.weekLabel)+'</div>'+
+       '<div class="prof-current-team">'+esc(cp.team)+'</div><div class="prof-current-stat">'+esc(stat)+'</div></div>';
+  } else {
+    h+='<div class="prof-current none"><div class="prof-current-lbl">Current Pick</div><div class="prof-current-stat">No pick submitted yet.</div></div>';
+  }
+
+  // Trophies
+  h+='<p class="section-title">Trophies</p>';
+  if(p.trophies&&p.trophies.length){
+    h+='<div class="prof-trophies">';
+    p.trophies.forEach(function(t){ h+='<div class="prof-trophy"><span class="pt-icon">'+t.icon+'</span><span>'+esc(t.label)+'</span></div>'; });
+    h+='</div>';
+  } else {
+    h+='<div class="empty">No trophies yet — the season\'s still young.</div>';
+  }
+
+  // Every week's pick
+  h+='<p class="section-title">Picks by Week</p><div class="lead-div">';
+  var any=false;
+  (p.picks||[]).forEach(function(wk){
+    any=true;
+    var right;
+    if(wk.team==null){
+      right = wk.missed ? '<span class="pw-res l">No pick · L</span>' : '<span class="pw-res none">No pick</span>';
+    } else {
+      var badge = wk.result==='W'?'<span class="pw-res w">W</span>'
+                : wk.result==='L'?'<span class="pw-res l">L</span>'
+                : wk.result==='T'?'<span class="pw-res t">T</span>'
+                : '<span class="pw-res pend">pending</span>';
+      var pts = (wk.pointsEarned!=null)?('<span class="pw-pts">'+wk.pointsEarned+'</span>'):'';
+      right='<span class="pw-team">'+esc(wk.team)+'</span>'+badge+pts;
+    }
+    h+='<div class="lead-row pw-row"><div class="pw-week">'+esc(wk.weekLabel)+'</div><div class="pw-right">'+right+'</div></div>';
+  });
+  if(!any) h+='<div class="empty">No weeks yet.</div>';
+  h+='</div>';
+
   c.innerHTML=h;
 }
 

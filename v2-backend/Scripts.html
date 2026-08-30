@@ -573,14 +573,16 @@ function renderLeaderboard(){
   bindAll(c,'.pills.grid2 .pill',function(el){ STATE.leaderConf=el.dataset.conf; renderLeaderboard(); });
   bindAll(c,'.pill-all',function(){ STATE.leaderShowAll=!STATE.leaderShowAll; renderLeaderboard(); });
   bindAll(c,'.lead-div-head:not(.static)',function(el){ navGo(function(){ renderDivision(el.dataset.conf,el.dataset.div); }); });
+  bindAll(c,'.lead-row[data-name]',function(el){ navGo(function(){ screenProfile(el.dataset.name); }); });
 }
 
 function leadRow(p,rank){
   var rc=rank===1?'r1':(rank===2?'r2':'');
-  return '<div class="lead-row"><div class="lead-rank '+rc+'">'+rank+'</div>'+
+  return '<div class="lead-row lead-clickable" data-name="'+esc(p.playerName)+'"><div class="lead-rank '+rc+'">'+rank+'</div>'+
     '<div class="lead-name">'+esc(p.playerName)+(p.isRookie?'<span class="badge-rookie">R</span>':'')+
       '<div class="lead-sub">'+(p.wins||0)+'-'+(p.losses||0)+(p.ties?'-'+p.ties:'')+'</div></div>'+
-    '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div></div>';
+    '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div>'+
+    '<span class="lead-chev">&#8250;</span></div>';
 }
 
 function renderDivision(confName,divName){
@@ -593,7 +595,7 @@ function renderDivision(confName,divName){
   h+='<table class="stbl"><thead><tr><th>#</th><th>Grahamchise</th><th class="c">Pts</th><th class="c">W</th><th class="c">L</th><th class="c">T</th></tr></thead><tbody>';
   dv.players.forEach(function(p){
     var r=p.divisionRank||1;
-    h+='<tr><td class="c">'+(r===1?'🏆':r)+'</td>'+
+    h+='<tr class="st-clickable" data-name="'+esc(p.playerName)+'"><td class="c">'+(r===1?'🏆':r)+'</td>'+
        '<td><strong>'+esc(p.playerName)+'</strong>'+(p.isRookie?'<span class="badge-rookie">R</span>':'')+'</td>'+
        '<td class="c pts">'+p.totalPoints+'</td>'+
        '<td class="c rec-w">'+(p.wins||0)+'</td>'+
@@ -601,6 +603,83 @@ function renderDivision(confName,divName){
        '<td class="c rec-t">'+(p.ties||0)+'</td></tr>';
   });
   h+='</tbody></table>';
+  c.innerHTML=h;
+  bindAll(c,'tr.st-clickable',function(el){ navGo(function(){ screenProfile(el.dataset.name); }); });
+}
+
+// ─── GRAHAMCHISE PROFILE ────────────────────────────────────────────────────
+function screenProfile(name){
+  showView('leaderboard');
+  var c=document.getElementById('leaderboard-content');
+  c.innerHTML='<p class="loading">Loading '+esc(name)+'…</p>';
+  google.script.run
+    .withSuccessHandler(function(p){
+      if(!p || !p.ok){ c.innerHTML='<p class="error-msg">'+esc((p&&p.error)||'Could not load profile.')+'</p>'; return; }
+      renderProfile(p);
+    })
+    .withFailureHandler(function(e){ c.innerHTML='<p class="error-msg">Could not load: '+(e.message||e)+'</p>'; })
+    .getGrahamchiseProfile(STATE.season, name);
+}
+
+function ordinal(n){ if(!n) return '—'; var s=['th','st','nd','rd'],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+
+function renderProfile(p){
+  var c=document.getElementById('leaderboard-content');
+  var rec=p.record||{wins:0,losses:0,ties:0};
+  var h='<p class="section-title">'+esc(p.player.name)+(p.player.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</p>';
+  h+='<p class="prof-sub">'+esc(p.player.conference.replace(' Chapter',''))+' · '+esc(p.player.division)+' Division</p>';
+
+  // Headline stat cards
+  h+='<div class="prof-cards">';
+  h+='<div class="prof-card"><div class="prof-big">'+p.totalPoints+'</div><div class="prof-lbl">Points</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+(rec.wins||0)+'-'+(rec.losses||0)+(rec.ties?'-'+rec.ties:'')+'</div><div class="prof-lbl">Record</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+ordinal(p.divisionRank)+'</div><div class="prof-lbl">in Division'+(p.divisionSize?' of '+p.divisionSize:'')+'</div></div>';
+  h+='<div class="prof-card"><div class="prof-big">'+ordinal(p.conferenceRank)+'</div><div class="prof-lbl">in Conference'+(p.conferenceSize?' of '+p.conferenceSize:'')+'</div></div>';
+  h+='</div>';
+  if(p.bonusPoints){ h+='<p class="prof-note">Includes '+p.bonusPoints+' bonus pt'+(p.bonusPoints!==1?'s':'')+' ('+p.pickPoints+' from picks).</p>'; }
+
+  // Current pick (shown even before kickoff)
+  if(p.currentPick){
+    var cp=p.currentPick;
+    var stat=cp.result?('Result: '+cp.result+(cp.pointsEarned!=null?' · '+cp.pointsEarned+' pt'+(cp.pointsEarned!==1?'s':''):''))
+            :(cp.started?'Game in progress / final — not scored yet':(cp.locked?'Locked — game started':'Pick can still be changed'));
+    h+='<div class="prof-current"><div class="prof-current-lbl">Current Pick · '+esc(cp.weekLabel)+'</div>'+
+       '<div class="prof-current-team">'+esc(cp.team)+'</div><div class="prof-current-stat">'+esc(stat)+'</div></div>';
+  } else {
+    h+='<div class="prof-current none"><div class="prof-current-lbl">Current Pick</div><div class="prof-current-stat">No pick submitted yet.</div></div>';
+  }
+
+  // Trophies
+  h+='<p class="section-title">Trophies</p>';
+  if(p.trophies&&p.trophies.length){
+    h+='<div class="prof-trophies">';
+    p.trophies.forEach(function(t){ h+='<div class="prof-trophy"><span class="pt-icon">'+t.icon+'</span><span>'+esc(t.label)+'</span></div>'; });
+    h+='</div>';
+  } else {
+    h+='<div class="empty">No trophies yet — the season\'s still young.</div>';
+  }
+
+  // Every week's pick
+  h+='<p class="section-title">Picks by Week</p><div class="lead-div">';
+  var any=false;
+  (p.picks||[]).forEach(function(wk){
+    any=true;
+    var right;
+    if(wk.team==null){
+      right = wk.missed ? '<span class="pw-res l">No pick · L</span>' : '<span class="pw-res none">No pick</span>';
+    } else {
+      var badge = wk.result==='W'?'<span class="pw-res w">W</span>'
+                : wk.result==='L'?'<span class="pw-res l">L</span>'
+                : wk.result==='T'?'<span class="pw-res t">T</span>'
+                : '<span class="pw-res pend">pending</span>';
+      var pts = (wk.pointsEarned!=null)?('<span class="pw-pts">'+wk.pointsEarned+'</span>'):'';
+      right='<span class="pw-team">'+esc(wk.team)+'</span>'+badge+pts;
+    }
+    h+='<div class="lead-row pw-row"><div class="pw-week">'+esc(wk.weekLabel)+'</div><div class="pw-right">'+right+'</div></div>';
+  });
+  if(!any) h+='<div class="empty">No weeks yet.</div>';
+  h+='</div>';
+
   c.innerHTML=h;
 }
 
