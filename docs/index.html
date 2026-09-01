@@ -215,8 +215,12 @@
   .lead-sub{font-size:.68rem;color:var(--muted);font-weight:600}
   .lead-pts{font-weight:900;color:var(--navy);font-size:1.05rem;text-align:right}
   .lead-pts small{font-size:.62rem;color:var(--muted);font-weight:700;display:block}
-  .badge-rookie{display:inline-block;background:var(--red);color:#fff;font-size:.54rem;font-weight:900;
-    padding:1px 5px;border-radius:4px;margin-left:6px;letter-spacing:.5px;vertical-align:middle}
+  .badge-rookie{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    background:var(--navy);color:#fff;font-size:.6rem;font-weight:900;border-radius:50%;
+    margin-left:6px;vertical-align:middle;line-height:1}
+  .badge-redshirt{display:inline-flex;align-items:center;justify-content:center;
+    margin-left:6px;vertical-align:middle;line-height:1}
+  .badge-redshirt svg{display:block}
 
   .lead-clickable{cursor:pointer}
   .lead-chev{color:var(--muted);font-weight:900;font-size:1.1rem;flex:0 0 auto;margin-left:2px}
@@ -555,6 +559,18 @@ function pickDataFor(cd, name){
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// Rookie indicator. Red-shirt rookies (a rookie subtype) get a red jersey with a
+// white R; plain rookies get a white R in a circle. Returns '' for non-rookies.
+function rookieBadge(p){
+  if(!p) return '';
+  if(p.redShirt) return ' <span class="badge-redshirt" title="Red-shirt rookie" aria-label="Red-shirt rookie">'
+    +'<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    +'<path d="M7 3 L2 6 L4 11 L7 10 V21 H17 V10 L20 11 L22 6 L17 3 C16 5 14.2 6 12 6 C9.8 6 8 5 7 3 Z" fill="#C8202F"/>'
+    +'<text x="12" y="16.5" text-anchor="middle" font-size="8.5" font-weight="900" fill="#fff" font-family="Arial,Helvetica,sans-serif">R</text>'
+    +'</svg></span>';
+  if(p.isRookie) return ' <span class="badge-rookie" title="Rookie" aria-label="Rookie">R</span>';
+  return '';
+}
 // Kickoff ISO -> viewer-local "Thu, Aug 20, 8:00 PM"
 function fmtKick(iso){ var d=new Date(iso); if(isNaN(d.getTime())) return 'Scheduled';
   return d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
@@ -630,7 +646,7 @@ function screenPickName(){
   groups.forEach(function(g){
     h+='<p class="name-group-title">'+esc(g.title)+'</p><div class="choose-grid">';
     g.people.forEach(function(p){
-      h+='<button class="choose-btn" data-name="'+esc(p.name)+'"><span>'+esc(p.name)+(p.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</span><span class="chev">&#8250;</span></button>';
+      h+='<button class="choose-btn" data-name="'+esc(p.name)+'"><span>'+esc(p.name)+rookieBadge(p)+'</span><span class="chev">&#8250;</span></button>';
     });
     h+='</div>';
   });
@@ -988,7 +1004,7 @@ function renderLeaderboard(){
 function leadRow(p,rank){
   var rc=rank===1?'r1':(rank===2?'r2':'');
   return '<div class="lead-row lead-clickable" data-name="'+esc(p.playerName)+'"><div class="lead-rank '+rc+'">'+rank+'</div>'+
-    '<div class="lead-name">'+esc(p.playerName)+(p.isRookie?'<span class="badge-rookie">R</span>':'')+
+    '<div class="lead-name">'+esc(p.playerName)+rookieBadge(p)+
       '<div class="lead-sub">'+(p.wins||0)+'-'+(p.losses||0)+(p.ties?'-'+p.ties:'')+'</div></div>'+
     '<div class="lead-pts">'+p.totalPoints+'<small>PTS</small></div>'+
     '<span class="lead-chev">&#8250;</span></div>';
@@ -1005,7 +1021,7 @@ function renderDivision(confName,divName){
   dv.players.forEach(function(p){
     var r=p.divisionRank||1;
     h+='<tr class="st-clickable" data-name="'+esc(p.playerName)+'"><td class="c">'+(r===1?'🏆':r)+'</td>'+
-       '<td><strong>'+esc(p.playerName)+'</strong>'+(p.isRookie?'<span class="badge-rookie">R</span>':'')+'</td>'+
+       '<td><strong>'+esc(p.playerName)+'</strong>'+rookieBadge(p)+'</td>'+
        '<td class="c pts">'+p.totalPoints+'</td>'+
        '<td class="c rec-w">'+(p.wins||0)+'</td>'+
        '<td class="c rec-l">'+(p.losses||0)+'</td>'+
@@ -1035,7 +1051,7 @@ function ordinal(n){ if(!n) return '—'; var s=['th','st','nd','rd'],v=n%100; r
 function renderProfile(p){
   var c=document.getElementById('leaderboard-content');
   var rec=p.record||{wins:0,losses:0,ties:0};
-  var h='<p class="section-title">'+esc(p.player.name)+(p.player.isRookie?' <span class="badge-rookie">ROOKIE</span>':'')+'</p>';
+  var h='<p class="section-title">'+esc(p.player.name)+rookieBadge(p.player)+'</p>';
   h+='<p class="prof-sub">'+esc(p.player.conference.replace(' Chapter',''))+' · '+esc(p.player.division)+' Division</p>';
 
   // Headline stat cards

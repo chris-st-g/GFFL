@@ -19,7 +19,7 @@
 // Each conference holds 2–4 divisions.
 
 var LEAGUE_STRUCTURE = [
-  { conference: 'Mt. Washington Chapter', divisions: ['Wiseman', 'Moeller'] },
+  { conference: 'Mt. Washington Chapter', divisions: ['Indiana', 'Cincy'] },
   { conference: 'Louisville Chapter',     divisions: ['IRISH Muskie-Tigers', 'Lioness', 'Mustang', 'Valkyrie'] },
   { conference: 'St. Gertrude Chapter',   divisions: ['Navy Flyer', 'Noodles', 'Grace', 'Carl'] },
   { conference: 'St. George Chapter',     divisions: ['St. George', 'Rogers', 'Graham', 'Moeller'] }
@@ -187,12 +187,16 @@ function getPlayers() {
       // Read as-is so an intentionally-blank cell clears the family; no legacy fallback
       // here, or clearing a mapped name would silently re-derive it.
       var fam = (row[5] === undefined || row[5] === null) ? '' : String(row[5]);
+      // Red-shirt rookies are a subtype of rookie (isRookie stays true); the flag
+      // only drives which badge shows. Column G (index 6), added by migration.
+      var redShirt = row[6] === true || row[6] === 'TRUE';
       return {
         playerId:   row[0],
         name:       row[1],
         conference: row[2] || '',
         division:   row[3] || '',
-        isRookie:   row[4] === true || row[4] === 'TRUE',
+        isRookie:   (row[4] === true || row[4] === 'TRUE') || redShirt,
+        redShirt:   redShirt,
         family:     fam
       };
     })
@@ -229,14 +233,16 @@ function getPlayerConference(name) {
  * @param {string} division
  * @param {boolean} [isRookie=false]
  * @param {string} [family='']
+ * @param {boolean} [redShirt=false] red-shirt rookie (forces isRookie true)
  * @returns {{ success: boolean, message: string }}
  */
-function addPlayer(name, conference, division, isRookie, family) {
+function addPlayer(name, conference, division, isRookie, family, redShirt) {
   name = (name || '').trim();
   if (!name) return { success: false, message: 'Name cannot be empty.' };
   conference = (conference || '').trim();
   division   = (division || '').trim();
-  isRookie   = isRookie === true || isRookie === 'true';
+  redShirt   = redShirt === true || redShirt === 'true';
+  isRookie   = isRookie === true || isRookie === 'true' || redShirt;
   family     = (family || '').trim();
 
   var existing = getPlayerNames();
@@ -246,7 +252,7 @@ function addPlayer(name, conference, division, isRookie, family) {
 
   var sheet  = getLeagueSheet().getSheetByName('Players');
   var nextId = sheet.getLastRow();
-  sheet.appendRow([nextId, name, conference, division, isRookie, family]);
+  sheet.appendRow([nextId, name, conference, division, isRookie, family, redShirt]);
   return { success: true, message: name + ' added.' };
 }
 
@@ -283,6 +289,28 @@ function updatePlayerRookieStatus(name, isRookie) {
     if (data[i][1] === name) {
       sheet.getRange(i + 1, 5).setValue(isRookie === true || isRookie === 'true');
       return { success: true, message: name + ' updated.' };
+    }
+  }
+  return { success: false, message: 'Grahamchise not found.' };
+}
+
+/**
+ * Sets the red-shirt-rookie flag (Players column G). A red-shirt rookie is still a
+ * rookie, so turning it on also sets IsRookie (column E) true; turning it off leaves
+ * IsRookie untouched (use setrookie to change that separately).
+ * @param {string} name
+ * @param {boolean} redShirt
+ * @returns {{ success: boolean, message: string }}
+ */
+function updatePlayerRedShirt(name, redShirt) {
+  redShirt = redShirt === true || redShirt === 'true';
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === name) {
+      sheet.getRange(i + 1, 7).setValue(redShirt);       // col G = RedShirt
+      if (redShirt) sheet.getRange(i + 1, 5).setValue(true); // a red-shirt is a rookie
+      return { success: true, message: name + (redShirt ? ' set as red-shirt rookie.' : ' red-shirt flag cleared.') };
     }
   }
   return { success: false, message: 'Grahamchise not found.' };

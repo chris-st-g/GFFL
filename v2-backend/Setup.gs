@@ -132,10 +132,9 @@ function clearPlayersSheet() {
  * is still the sample roster (not yet provided).
  */
 var REAL_ROSTERS = {
-  // Placeholder roster until the real Mt. Washington names are provided.
   'Mt. Washington Chapter': {
-    'Wiseman': ['MtW Alpha', 'MtW Bravo', 'MtW Charlie', 'MtW Delta', 'MtW Echo'],
-    'Moeller': ['MtW Foxtrot', 'MtW Golf', 'MtW Hotel', 'MtW India', 'MtW Juliet']
+    'Indiana': ['Spellcheck', 'Junior', 'MarBear', 'Belle', 'Cousin Floss', 'Heimlich', 'Bug', 'Gurge'],
+    'Cincy':   ['First Lady', 'Lone Ranger', 'Sugar', 'Margot Polo', 'Raspberry', 'Waggle']
   },
   'Louisville Chapter': {
     'IRISH Muskie-Tigers': ['Hank', 'Legend', 'Glide', 'Giligan', 'Coach Oeaux', 'Ellrish'],
@@ -163,6 +162,11 @@ var REAL_ROSTERS = {
  * get family grouping; others fall back to division grouping in the UI.
  */
 var FAMILIES = {
+  'Mt. Washington Chapter': [
+    { family: 'Brian', members: ['Junior', 'Spellcheck', 'Belle', 'MarBear'] },
+    { family: 'Alex',  members: ['Heimlich', 'Cousin Floss', 'First Lady', 'Sugar', 'Raspberry'] },
+    { family: 'David', members: ['Gurge', 'Bug', 'Lone Ranger', 'Margot Polo', 'Waggle'] }
+  ],
   'St. George Chapter': [
     { family: 'Micah',    members: ['O.T.', 'St. Gator', "Lil' Bear", 'Golden Bear', "Lil' Peanut"] },
     { family: 'Tom',      members: ['Knife Hands', 'Big Red', 'Globetrotter', 'Relax', 'SCStG', 'Colonel'] },
@@ -222,6 +226,31 @@ function migrateAddFamilyColumn() {
     }
   }
   return backfilled;
+}
+
+/**
+ * One-time migration: ensures the Players sheet has a RedShirt column (G) with a
+ * header and a FALSE default in every player row that lacks a value. Idempotent.
+ * Red-shirt is a rookie subtype (see updatePlayerRedShirt); this only names the
+ * column so it renders in the sheet — getPlayers already treats a blank as false.
+ * @returns {number} how many rows were defaulted to FALSE
+ */
+function migrateAddRedShirtColumn() {
+  var sheet = getLeagueSheet().getSheetByName('Players');
+  var data  = sheet.getDataRange().getValues();
+  var header = data[0] || [];
+  if (header.length < 7 || header[6] !== 'RedShirt') {
+    sheet.getRange(1, 7).setValue('RedShirt').setFontWeight('bold');
+  }
+  var defaulted = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][1]) continue;
+    var cur = data[i][6];
+    if (cur === undefined || cur === null || cur === '') {
+      sheet.getRange(i + 1, 7).setValue(false); defaulted++;
+    }
+  }
+  return defaulted;
 }
 
 /**
@@ -463,7 +492,8 @@ function clearSheetSeason_(name, col, season) {
  *   op=setdivision  player=&division=                → change division (same conference)
  *   op=move         player=&conference=&division=    → change conference (+ division)
  *   op=setrookie    player=&rookie=true|false        → set rookie flag
- *   op=add          name=&conference=&division=&rookie=&family=
+ *   op=setredshirt  player=&redshirt=true|false      → red-shirt rookie (implies rookie)
+ *   op=add          name=&conference=&division=&rookie=&family=&redshirt=
  *   op=remove       player=                          → delete the player's roster row
  */
 function runRosterAdminRoute(e) {
@@ -476,7 +506,9 @@ function runRosterAdminRoute(e) {
 
     } else if (op === 'migrate') {
       out.backfilled = migrateAddFamilyColumn();
-      out.message = 'Family column ensured; backfilled ' + out.backfilled + ' player(s) from the legacy map.';
+      out.redShirtDefaulted = migrateAddRedShirtColumn();
+      out.message = 'Family column ensured; backfilled ' + out.backfilled + ' player(s) from the legacy map. ' +
+        'RedShirt column ensured; defaulted ' + out.redShirtDefaulted + ' player(s) to FALSE.';
 
     } else if (op === 'rename') {
       var r = renamePlayer(p['old'], p['new']);
@@ -513,8 +545,13 @@ function runRosterAdminRoute(e) {
       if (!r5.success) throw new Error(r5.message);
       out.result = r5;
 
+    } else if (op === 'setredshirt') {
+      var r5b = updatePlayerRedShirt(p.player, p.redshirt);
+      if (!r5b.success) throw new Error(r5b.message);
+      out.result = r5b;
+
     } else if (op === 'add') {
-      var r6 = addPlayer(p.name, p.conference, p.division, p.rookie, p.family);
+      var r6 = addPlayer(p.name, p.conference, p.division, p.rookie, p.family, p.redshirt);
       if (!r6.success) throw new Error(r6.message);
       out.result = r6;
 
@@ -524,7 +561,7 @@ function runRosterAdminRoute(e) {
       out.result = r7;
 
     } else {
-      throw new Error('Unknown op: ' + op + ' (list|migrate|rename|setfamily|setdivision|move|setrookie|add|remove)');
+      throw new Error('Unknown op: ' + op + ' (list|migrate|rename|setfamily|setdivision|move|setrookie|setredshirt|add|remove)');
     }
   } catch (err) {
     out.ok = false;
